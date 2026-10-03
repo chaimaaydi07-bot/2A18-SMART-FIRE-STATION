@@ -1,52 +1,30 @@
-#include <QApplication>
-#include <QAbstractItemView>
-#include <QColor>
-#include <QComboBox>
-#include <QDateTimeEdit>
-#include <QDialog>
-#include <QFile>
-#include <QFileDialog>
-#include <QFont>
-#include <QFrame>
-#include <QGraphicsDropShadowEffect>
-#include <QGridLayout>
-#include <QHBoxLayout>
-#include <QHeaderView>
-#include <QIcon>
-#include <QLabel>
-#include <QLineEdit>
-#include <QMainWindow>
-#include <QMessageBox>
-#include <QPainter>
+#include <QtWidgets>
+#include <QPdfWriter>
 #include <QPageLayout>
 #include <QPageSize>
-#include <QPdfWriter>
-#include <QPixmap>
-#include <QPushButton>
-#include <QScrollArea>
-#include <QStringList>
-#include <QSpinBox>
-#include <QTableWidget>
 #include <QTextDocument>
-#include <QTextEdit>
-#include <QVBoxLayout>
 #include <algorithm>
 #include <vector>
 
 struct Incident
 {
-    int id;
+    int id = 0;
     QString type;
     QDateTime date;
     QString address;
     QString gravity;
-    int victims;
+    int victims = 0;
     QString description;
     QString status;
     bool archived = false;
 };
 
-static QString priority(const Incident &incident)
+static QString incidentNumber(int id)
+{
+    return QString("INC-%1").arg(id, 3, 10, QChar('0'));
+}
+
+static QString calculatePriority(const Incident &incident)
 {
     if (incident.gravity == "Critique" || incident.victims >= 5)
         return "Urgente";
@@ -60,59 +38,94 @@ static QString priority(const Incident &incident)
     return "Faible";
 }
 
-static QIcon makeIcon(ushort symbol,
-                      const QColor &color,
-                      int pixelSize = 23)
+static QPixmap loadLogo()
 {
-    QPixmap image(34, 34);
-    image.fill(Qt::transparent);
+    const QStringList paths = {
+        ":/images/logo.png",
+        ":/images/logo.jpeg",
+        ":/logo.png",
+        ":/logo.jpeg",
+        "logo.png",
+        "logo.jpeg"
+    };
 
-    QPainter painter(&image);
-    painter.setRenderHint(QPainter::Antialiasing);
-    painter.setRenderHint(QPainter::TextAntialiasing);
-    painter.setPen(color);
+    for (const QString &path : paths) {
+        QPixmap image(path);
 
-    QFont font("Segoe MDL2 Assets");
-    font.setPixelSize(pixelSize);
-    painter.setFont(font);
+        if (!image.isNull())
+            return image;
+    }
 
-    painter.drawText(image.rect(),
-                     Qt::AlignCenter,
-                     QString(QChar(symbol)));
-
-    return QIcon(image);
+    return {};
 }
 
-static QLabel *caption(const QString &text)
+static void animateEntrance(QWidget *widget, int delay, QPoint offset)
 {
-    auto *label = new QLabel(text);
-    label->setObjectName("fieldCaption");
-    return label;
+    QTimer::singleShot(delay, widget, [widget, offset] {
+        if (!widget || widget->graphicsEffect())
+            return;
+
+        QPoint finalPosition = widget->pos();
+        widget->move(finalPosition + offset);
+
+        auto *effect = new QGraphicsOpacityEffect(widget);
+        effect->setOpacity(0.0);
+        widget->setGraphicsEffect(effect);
+
+        auto *group = new QParallelAnimationGroup(widget);
+
+        auto *fade = new QPropertyAnimation(effect, "opacity", group);
+        fade->setDuration(500);
+        fade->setStartValue(0.0);
+        fade->setEndValue(1.0);
+        fade->setEasingCurve(QEasingCurve::OutCubic);
+
+        auto *slide = new QPropertyAnimation(widget, "pos", group);
+        slide->setDuration(500);
+        slide->setStartValue(finalPosition + offset);
+        slide->setEndValue(finalPosition);
+        slide->setEasingCurve(QEasingCurve::OutCubic);
+
+        QObject::connect(
+            group,
+            &QParallelAnimationGroup::finished,
+            widget,
+            [widget] {
+                widget->setGraphicsEffect(nullptr);
+            });
+
+        group->start(QAbstractAnimation::DeleteWhenStopped);
+    });
 }
 
-static QVBoxLayout *field(const QString &title,
-                          QWidget *input)
+static void animateRefresh(QWidget *widget)
 {
-    auto *layout = new QVBoxLayout;
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(7);
-    layout->addWidget(caption(title));
-    layout->addWidget(input);
-    return layout;
-}
+    if (!widget || widget->graphicsEffect())
+        return;
 
-static QFrame *card()
-{
-    auto *panel = new QFrame;
-    panel->setObjectName("card");
+    auto *effect = new QGraphicsOpacityEffect(widget);
+    widget->setGraphicsEffect(effect);
 
-    auto *shadow = new QGraphicsDropShadowEffect(panel);
-    shadow->setBlurRadius(24);
-    shadow->setOffset(0, 5);
-    shadow->setColor(QColor(80, 35, 35, 22));
-    panel->setGraphicsEffect(shadow);
+    auto *animation = new QPropertyAnimation(
+        effect,
+        "opacity",
+        widget
+        );
 
-    return panel;
+    animation->setDuration(280);
+    animation->setStartValue(0.25);
+    animation->setEndValue(1.0);
+    animation->setEasingCurve(QEasingCurve::OutCubic);
+
+    QObject::connect(
+        animation,
+        &QPropertyAnimation::finished,
+        widget,
+        [widget] {
+            widget->setGraphicsEffect(nullptr);
+        });
+
+    animation->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 class MainWindow : public QMainWindow
@@ -121,49 +134,70 @@ public:
     MainWindow()
     {
         setWindowTitle(
-            "Smart Fire Station — Gestion des incidents");
+            "Smart Fire Station — Gestion des incidents"
+            );
 
         resize(1460, 850);
-        setMinimumSize(1040, 690);
+        setMinimumSize(1100, 700);
 
-        createUi();
+        createInterface();
 
         incidents = {
-            {1,
-             "Incendie",
-             QDateTime::currentDateTime().addSecs(-7200),
-             "Tunis",
-             "Critique",
-             5,
-             "Incendie dans un bâtiment",
-             "En cours"},
-
-            {2,
-             "Accident",
-             QDateTime::currentDateTime().addDays(-1),
-             "Ariana",
-             "Élevée",
-             2,
-             "Accident de la route",
-             "Signalé"},
-
-            {3,
-             "Fuite de gaz",
-             QDateTime::currentDateTime().addDays(-2),
-             "Ben Arous",
-             "Moyenne",
-             0,
-             "Fuite signalée",
-             "Terminé"},
-
-            {4,
-             "Sauvetage",
-             QDateTime::currentDateTime().addDays(-3),
-             "La Marsa",
-             "Élevée",
-             1,
-             "Assistance à une personne",
-             "En cours"}
+            {
+                1,
+                "Incendie",
+                QDateTime::currentDateTime().addSecs(-7200),
+                "Tunis",
+                "Critique",
+                5,
+                "Incendie dans un bâtiment",
+                "En cours",
+                false
+            },
+            {
+                2,
+                "Accident",
+                QDateTime::currentDateTime().addDays(-1),
+                "Ariana",
+                "Élevée",
+                2,
+                "Accident de la route",
+                "Signalé",
+                false
+            },
+            {
+                3,
+                "Fuite de gaz",
+                QDateTime::currentDateTime().addDays(-2),
+                "Ben Arous",
+                "Moyenne",
+                0,
+                "Fuite de gaz signalée",
+                "Terminé",
+                false
+            },
+            {
+                4,
+                "Sauvetage",
+                QDateTime::currentDateTime().addDays(-3),
+                "La Marsa",
+                "Élevée",
+                1,
+                "Assistance à une personne",
+                "En cours",
+                false
+            },
+            {
+                5,
+                "Autre",
+                QDateTime::currentDateTime().addDays(-4),
+                "Sfax",
+                "Faible",
+                0,
+                "Incident mineur sans victime",
+                "Signalé",
+                false
+            }
         };
 
         refreshTable();
@@ -172,7 +206,7 @@ public:
 private:
     std::vector<Incident> incidents;
 
-    int nextId = 5;
+    int nextId = 6;
     int selectedId = -1;
 
     QComboBox *typeInput = nullptr;
@@ -184,39 +218,114 @@ private:
     QComboBox *statusInput = nullptr;
 
     QLineEdit *searchInput = nullptr;
-    QComboBox *filterInput = nullptr;
+    QComboBox *gravityFilter = nullptr;
     QComboBox *sortInput = nullptr;
+
     QTableWidget *table = nullptr;
 
     QLabel *countLabel = nullptr;
-    QLabel *alertLabel = nullptr;
+    QLabel *alertText = nullptr;
     QLabel *alertDetails = nullptr;
     QPushButton *alertButton = nullptr;
 
-    void createUi()
+    QLabel *createFieldTitle(const QString &text)
+    {
+        auto *label = new QLabel(text);
+        label->setObjectName("fieldTitle");
+
+        return label;
+    }
+
+    QVBoxLayout *createField(
+        const QString &title,
+        QWidget *input)
+    {
+        auto *layout = new QVBoxLayout;
+
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(6);
+
+        layout->addWidget(createFieldTitle(title));
+        layout->addWidget(input);
+
+        return layout;
+    }
+
+    QFrame *createCard()
+    {
+        auto *card = new QFrame;
+        card->setObjectName("card");
+
+        auto *shadow = new QGraphicsDropShadowEffect(card);
+
+        shadow->setBlurRadius(24);
+        shadow->setOffset(0, 5);
+        shadow->setColor(QColor(80, 35, 35, 25));
+
+        card->setGraphicsEffect(shadow);
+
+        return card;
+    }
+
+    QPushButton *createNavigationButton(
+        const QString &icon,
+        const QString &text,
+        bool active)
+    {
+        auto *button = new QPushButton(
+            icon + "   " + text
+            );
+
+        button->setObjectName(
+            active ? "navActive" : "nav"
+            );
+
+        button->setMinimumHeight(49);
+        button->setCursor(Qt::PointingHandCursor);
+
+        if (!active) {
+            connect(
+                button,
+                &QPushButton::clicked,
+                this,
+                [this, text] {
+                    QMessageBox::information(
+                        this,
+                        text,
+                        "Ce module sera intégré prochainement."
+                        );
+                });
+        }
+
+        return button;
+    }
+
+    void createInterface()
     {
         setStyleSheet(R"CSS(
             QMainWindow,
             QWidget#root,
-            QScrollArea,
-            QWidget#content {
+            QWidget#content,
+            QScrollArea {
                 background: #f3f5f7;
+                font-family: "Segoe UI";
             }
 
             QFrame#sidebar {
                 background: qlineargradient(
-                    x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #3b0a12,
-                    stop:0.42 #74121e,
-                    stop:0.76 #ad1826,
-                    stop:1 #d33a32
+                    x1:0, y1:0,
+                    x2:0, y2:1,
+                    stop:0 #27050c,
+                    stop:0.32 #59101a,
+                    stop:0.68 #a71928,
+                    stop:1 #d53d39
                 );
-                border-right: 1px solid #5e1019;
+                border: none;
             }
 
             QFrame#card {
-                background: #ffffff;
-                border: 1px solid #e7e9ed;
+                background: white;
+                border: 1px solid #e6e8ec;
                 border-radius: 18px;
             }
 
@@ -227,7 +336,7 @@ private:
             }
 
             QLabel#heading {
-                color: #231f27;
+                color: #211e25;
                 font-size: 34px;
                 font-weight: 800;
             }
@@ -238,20 +347,28 @@ private:
             }
 
             QLabel#cardTitle {
-                color: #3b252a;
-                font-size: 25px;
+                color: #8f1723;
+                font-size: 23px;
                 font-weight: 800;
             }
 
-            QLabel#titleIcon {
-                color: #b51d2a;
-                font-size: 29px;
+            QLabel#fieldTitle {
+                color: #3d3a42;
+                font-size: 12px;
+                font-weight: 700;
+            }
+
+            QLabel#count {
+                color: white;
+                background: #981a27;
+                border-radius: 12px;
+                padding: 7px 12px;
                 font-weight: 800;
             }
 
-            QLabel#alertHeading {
+            QLabel#alertTitle {
                 color: #a71928;
-                font-size: 18px;
+                font-size: 17px;
                 font-weight: 800;
             }
 
@@ -260,45 +377,9 @@ private:
                 font-size: 12px;
             }
 
-            QLabel#alertSymbol {
-                color: #d0202f;
-                font-size: 34px;
-                font-weight: 800;
-            }
-
-            QLabel#fieldCaption {
-                color: #3d3a42;
-                font-size: 12px;
-                font-weight: 700;
-            }
-
-            QLabel#footer {
-                color: #ffd9d6;
-                font-size: 10px;
-                font-weight: 700;
-            }
-
-            QLabel#badge {
-                color: #a71827;
-                background: #fff0f1;
-                border: 1px solid #f0c7cc;
-                border-radius: 11px;
-                padding: 6px 11px;
-                font-size: 11px;
-                font-weight: 700;
-            }
-
-            QLabel#count {
-                background: #981a27;
-                color: white;
-                border-radius: 12px;
-                padding: 7px 12px;
-                font-size: 11px;
-                font-weight: 800;
-            }
-
             QPushButton#nav {
                 color: #fff8f7;
+                background: transparent;
                 text-align: left;
                 border: 1px solid transparent;
                 border-radius: 10px;
@@ -307,13 +388,13 @@ private:
             }
 
             QPushButton#nav:hover {
-                background: #8f2632;
-                border: 1px solid #cf7780;
+                background: rgba(255,255,255,35);
+                border-color: #cf7780;
             }
 
             QPushButton#navActive {
-                background: #ffffff;
                 color: #9d1724;
+                background: white;
                 text-align: left;
                 border: 2px solid #f1bec4;
                 border-radius: 11px;
@@ -327,22 +408,13 @@ private:
             QComboBox,
             QDateTimeEdit,
             QSpinBox {
-                background: #fbfbfc;
                 color: #26232a;
+                background: #fbfbfc;
                 border: 2px solid #dfe2e7;
                 border-radius: 9px;
-                padding: 9px;
+                padding: 8px;
                 min-height: 23px;
                 font-size: 12px;
-            }
-
-            QLineEdit:hover,
-            QTextEdit:hover,
-            QComboBox:hover,
-            QDateTimeEdit:hover,
-            QSpinBox:hover {
-                border: 2px solid #c3a1a7;
-                background: white;
             }
 
             QLineEdit:focus,
@@ -350,24 +422,16 @@ private:
             QComboBox:focus,
             QDateTimeEdit:focus,
             QSpinBox:focus {
-                border: 2px solid #bd1e2c;
                 background: white;
-            }
-
-            QComboBox QAbstractItemView {
-                background: white;
-                color: #27232a;
-                selection-background-color: #f8dfe2;
-                selection-color: #8e1420;
+                border-color: #bd1e2c;
             }
 
             QPushButton#primary {
-                background: #b51c2a;
                 color: white;
+                background: #b51c2a;
                 border: 2px solid #8f1420;
                 border-radius: 10px;
-                padding: 11px 19px;
-                font-size: 13px;
+                padding: 10px 16px;
                 font-weight: 800;
             }
 
@@ -376,12 +440,11 @@ private:
             }
 
             QPushButton#outline {
-                background: white;
                 color: #a61725;
+                background: white;
                 border: 2px solid #c94d59;
                 border-radius: 10px;
                 padding: 10px 16px;
-                font-size: 13px;
                 font-weight: 800;
             }
 
@@ -389,20 +452,36 @@ private:
                 background: #fff1f2;
             }
 
-            QPushButton#subtle {
-                background: #fff0f1;
+            QPushButton#archive {
                 color: #a61725;
+                background: #fff0f1;
                 border: 2px solid #e0a3aa;
                 border-radius: 10px;
                 padding: 10px 16px;
-                font-size: 13px;
                 font-weight: 800;
             }
 
+            QPushButton#archive:hover {
+                background: #f9dce0;
+            }
+
+            QPushButton#danger {
+                color: white;
+                background: #8f1420;
+                border: 2px solid #74101a;
+                border-radius: 10px;
+                padding: 10px 16px;
+                font-weight: 800;
+            }
+
+            QPushButton#danger:hover {
+                background: #c1121f;
+            }
+
             QTableWidget {
+                color: #302d34;
                 background: white;
                 alternate-background-color: #fbf7f8;
-                color: #302d34;
                 border: 1px solid #e4e6ea;
                 border-radius: 10px;
                 gridline-color: #eceef1;
@@ -412,267 +491,276 @@ private:
             }
 
             QHeaderView::section {
-                background: #5b1722;
                 color: white;
+                background: #5b1722;
                 border: none;
                 border-right: 1px solid #762834;
-                padding: 13px 5px;
+                padding: 12px 5px;
                 font-size: 11px;
                 font-weight: 800;
             }
 
-            QLabel#gravityCritical {
-                color: white;
-                background: #c1121f;
-                border-radius: 10px;
-                padding: 6px 10px;
-                font-weight: 800;
-            }
-
-            QLabel#gravityHigh {
-                color: white;
-                background: #e05a47;
-                border-radius: 10px;
-                padding: 6px 10px;
-                font-weight: 800;
-            }
-
-            QLabel#gravityMedium {
-                color: #8d4a00;
-                background: #ffe0a3;
-                border-radius: 10px;
-                padding: 6px 10px;
-                font-weight: 800;
-            }
-
-            QLabel#gravityLow {
-                color: #24623d;
-                background: #d9f1e2;
-                border-radius: 10px;
-                padding: 6px 10px;
-                font-weight: 800;
-            }
-
-            QLabel#statusOpen {
-                color: #8b5200;
-                background: #fff0c7;
-                border-radius: 9px;
-                padding: 5px 8px;
-                font-weight: 700;
-            }
-
-            QLabel#statusActive {
-                color: #9c1724;
-                background: #ffe1e4;
-                border-radius: 9px;
-                padding: 5px 8px;
-                font-weight: 700;
-            }
-
-            QLabel#statusDone {
-                color: #236440;
-                background: #dcf3e5;
-                border-radius: 9px;
-                padding: 5px 8px;
-                font-weight: 700;
-            }
-
             QPushButton#tableAction {
-                background: #fff4f5;
                 color: #9e1724;
+                background: #fff4f5;
                 border: 1px solid #efc9cd;
                 border-radius: 7px;
-                padding: 4px;
+                padding: 5px;
+            }
+
+            QPushButton#tableAction:hover {
+                background: #f6d6da;
+            }
+
+            QPushButton#tableDelete {
+                color: white;
+                background: #8f1420;
+                border: 1px solid #74101a;
+                border-radius: 7px;
+                padding: 5px;
+            }
+
+            QPushButton#tableDelete:hover {
+                background: #c1121f;
             }
         )CSS");
 
-        auto *root = new QWidget;
-        root->setObjectName("root");
-        setCentralWidget(root);
+        auto *rootWidget = new QWidget;
+        rootWidget->setObjectName("root");
 
-        auto *outer = new QHBoxLayout(root);
-        outer->setContentsMargins(0, 0, 0, 0);
-        outer->setSpacing(0);
+        setCentralWidget(rootWidget);
+
+        auto *mainLayout = new QHBoxLayout(rootWidget);
+
+        mainLayout->setContentsMargins(0, 0, 0, 0);
+        mainLayout->setSpacing(0);
 
         auto *sidebar = new QFrame;
+
         sidebar->setObjectName("sidebar");
-        sidebar->setFixedWidth(218);
-        outer->addWidget(sidebar);
+        sidebar->setFixedWidth(230);
 
-        auto *side = new QVBoxLayout(sidebar);
-        side->setContentsMargins(17, 24, 17, 24);
-        side->setSpacing(8);
+        mainLayout->addWidget(sidebar);
 
-        auto *logo = new QLabel;
-        logo->setFixedSize(116, 116);
-        logo->setAlignment(Qt::AlignCenter);
-        logo->setStyleSheet(
+        auto *sidebarLayout = new QVBoxLayout(sidebar);
+
+        sidebarLayout->setContentsMargins(
+            17, 24, 17, 24
+            );
+
+        sidebarLayout->setSpacing(8);
+
+        auto *logoLabel = new QLabel;
+
+        logoLabel->setFixedSize(116, 116);
+        logoLabel->setAlignment(Qt::AlignCenter);
+
+        logoLabel->setStyleSheet(
             "background:white;"
             "border:2px solid #f0c5c9;"
-            "border-radius:14px;");
+            "border-radius:14px;"
+            "color:#981a27;"
+            "font-weight:800;"
+            );
 
-        const QPixmap picture(":/images/logo.png");
+        QPixmap logo = loadLogo();
 
-        if (!picture.isNull()) {
-            logo->setPixmap(
-                picture.scaled(
+        if (!logo.isNull()) {
+            logoLabel->setPixmap(
+                logo.scaled(
                     104,
                     104,
                     Qt::KeepAspectRatio,
-                    Qt::SmoothTransformation));
+                    Qt::SmoothTransformation
+                    )
+                );
+        } else {
+            logoLabel->setText(
+                "SMART FIRE\nSTATION"
+                );
         }
 
-        side->addWidget(logo, 0, Qt::AlignHCenter);
-        side->addSpacing(18);
+        sidebarLayout->addWidget(
+            logoLabel,
+            0,
+            Qt::AlignHCenter
+            );
 
-        const QStringList navTexts = {
-            "Tableau de bord",
-            "Incidents",
-            "Interventions",
-            "Pompiers",
-            "Véhicules",
-            "Équipements",
-            "Rapports"
-        };
+        sidebarLayout->addSpacing(18);
 
-        const ushort navSymbols[] = {
-            0xE80F,
-            0xE7BA,
-            0xE77B,
-            0xE716,
-            0xE7F4,
-            0xE713,
-            0xE9D9
-        };
+        sidebarLayout->addWidget(
+            createNavigationButton(
+                "⌂",
+                "Tableau de bord",
+                false
+                )
+            );
 
-        for (int index = 0;
-             index < navTexts.size();
-             ++index) {
+        sidebarLayout->addWidget(
+            createNavigationButton(
+                "⚠",
+                "Incidents",
+                true
+                )
+            );
 
-            const QString name = navTexts[index];
-            const bool active = name == "Incidents";
+        sidebarLayout->addWidget(
+            createNavigationButton(
+                "✚",
+                "Interventions",
+                false
+                )
+            );
 
-            auto *nav = new QPushButton(name);
-            nav->setObjectName(active ? "navActive" : "nav");
+        sidebarLayout->addWidget(
+            createNavigationButton(
+                "♟",
+                "Personnel",
+                false
+                )
+            );
 
-            nav->setIcon(
-                makeIcon(
-                    navSymbols[index],
-                    QColor(active ? "#9d1724" : "#ffffff"),
-                    24));
+        sidebarLayout->addWidget(
+            createNavigationButton(
+                "▰",
+                "Véhicules",
+                false
+                )
+            );
 
-            nav->setIconSize(QSize(27, 27));
-            nav->setMinimumHeight(50);
-            nav->setCursor(Qt::PointingHandCursor);
-            side->addWidget(nav);
+        sidebarLayout->addWidget(
+            createNavigationButton(
+                "⚙",
+                "Équipements",
+                false
+                )
+            );
 
-            if (!active) {
-                connect(
-                    nav,
-                    &QPushButton::clicked,
-                    this,
-                    [this, name] {
-                        QMessageBox::information(
-                            this,
-                            name,
-                            "Ce module sera intégré prochainement.");
-                    });
-            }
-        }
+        sidebarLayout->addWidget(
+            createNavigationButton(
+                "▥",
+                "Rapports",
+                false
+                )
+            );
 
-        side->addStretch();
+        sidebarLayout->addStretch();
 
-        auto *footer = new QLabel("PROTECTION CIVILE");
-        footer->setObjectName("footer");
-        side->addWidget(footer, 0, Qt::AlignHCenter);
+        auto *protectionLabel =
+            new QLabel("PROTECTION CIVILE");
 
-        auto *scroll = new QScrollArea;
-        scroll->setWidgetResizable(true);
-        scroll->setFrameShape(QFrame::NoFrame);
-        outer->addWidget(scroll, 1);
+        protectionLabel->setAlignment(Qt::AlignCenter);
 
-        auto *content = new QWidget;
-        content->setObjectName("content");
-        scroll->setWidget(content);
+        protectionLabel->setStyleSheet(
+            "color:#ffd9d6;"
+            "font-weight:700;"
+            );
 
-        auto *page = new QVBoxLayout(content);
-        page->setContentsMargins(28, 26, 28, 26);
-        page->setSpacing(22);
+        sidebarLayout->addWidget(protectionLabel);
 
-        auto *header = new QHBoxLayout;
-        auto *titles = new QVBoxLayout;
+        auto *scrollArea = new QScrollArea;
 
-        auto *heading = new QLabel("Gestion des incidents");
+        scrollArea->setWidgetResizable(true);
+        scrollArea->setFrameShape(QFrame::NoFrame);
+
+        mainLayout->addWidget(scrollArea, 1);
+
+        auto *contentWidget = new QWidget;
+        contentWidget->setObjectName("content");
+
+        scrollArea->setWidget(contentWidget);
+
+        auto *pageLayout = new QVBoxLayout(contentWidget);
+
+        pageLayout->setContentsMargins(
+            28, 26, 28, 26
+            );
+
+        pageLayout->setSpacing(20);
+
+        auto *headerLayout = new QHBoxLayout;
+        auto *titlesLayout = new QVBoxLayout;
+
+        auto *heading =
+            new QLabel("Gestion des incidents");
+
         heading->setObjectName("heading");
-        titles->addWidget(heading);
 
         auto *subtitle = new QLabel(
-            "Créer, consulter et suivre les incidents en temps réel");
+            "Créer, consulter et suivre les incidents en temps réel"
+            );
 
         subtitle->setObjectName("subheading");
-        titles->addWidget(subtitle);
 
-        auto *titleLine = new QFrame;
-        titleLine->setFixedSize(82, 4);
-        titleLine->setStyleSheet(
+        auto *redLine = new QFrame;
+
+        redLine->setFixedSize(82, 4);
+
+        redLine->setStyleSheet(
             "background:#c51f2e;"
             "border:0;"
-            "border-radius:2px;");
+            "border-radius:2px;"
+            );
 
-        titles->addSpacing(5);
-        titles->addWidget(titleLine);
+        titlesLayout->addWidget(heading);
+        titlesLayout->addWidget(subtitle);
+        titlesLayout->addSpacing(5);
+        titlesLayout->addWidget(redLine);
 
-        header->addLayout(titles);
-        header->addStretch();
+        headerLayout->addLayout(titlesLayout);
+        headerLayout->addStretch();
 
-        auto *role = new QLabel("Agent de coordination");
-        role->setStyleSheet(
+        auto *roleLabel =
+            new QLabel("Agent de coordination");
+
+        roleLabel->setStyleSheet(
             "color:#8e1521;"
             "background:white;"
             "border:2px solid #ebc5ca;"
             "border-radius:12px;"
             "padding:11px 17px;"
-            "font-weight:bold;");
+            "font-weight:bold;"
+            );
 
-        header->addWidget(role, 0, Qt::AlignTop);
-        page->addLayout(header);
+        headerLayout->addWidget(
+            roleLabel,
+            0,
+            Qt::AlignTop
+            );
 
-        auto *columns = new QHBoxLayout;
-        columns->setSpacing(18);
-        page->addLayout(columns, 1);
+        pageLayout->addLayout(headerLayout);
 
-        auto *formCard = card();
-        columns->addWidget(formCard, 47);
+        auto *columnsLayout = new QHBoxLayout;
 
-        auto *form = new QVBoxLayout(formCard);
-        form->setContentsMargins(23, 23, 23, 23);
-        form->setSpacing(15);
+        columnsLayout->setSpacing(18);
+        pageLayout->addLayout(columnsLayout, 1);
 
-        auto *formTop = new QHBoxLayout;
+        auto *formCard = createCard();
+        columnsLayout->addWidget(formCard, 46);
 
-        auto *formIcon = new QLabel("▣");
-        formIcon->setObjectName("titleIcon");
-        formTop->addWidget(formIcon);
+        auto *formLayout = new QVBoxLayout(formCard);
 
-        auto *formTitle = new QLabel("Nouvel incident");
+        formLayout->setContentsMargins(
+            23, 23, 23, 23
+            );
+
+        formLayout->setSpacing(14);
+
+        auto *formTitle =
+            new QLabel("▣  Nouvel incident");
+
         formTitle->setObjectName("cardTitle");
-        formTop->addWidget(formTitle);
+        formLayout->addWidget(formTitle);
 
-        formTop->addStretch();
+        auto *formDescription = new QLabel(
+            "Saisir les informations de l'incident"
+            );
 
-        auto *badge = new QLabel("CRUD");
-        badge->setObjectName("badge");
-        formTop->addWidget(badge);
-
-        form->addLayout(formTop);
-
-        auto *formHint = new QLabel(
-            "Saisir les informations de l'incident");
-
-        formHint->setObjectName("subheading");
-        form->addWidget(formHint);
+        formDescription->setObjectName("subheading");
+        formLayout->addWidget(formDescription);
 
         typeInput = new QComboBox;
+
         typeInput->addItems({
             "Incendie",
             "Accident",
@@ -682,6 +770,7 @@ private:
         });
 
         gravityInput = new QComboBox;
+
         gravityInput->addItems({
             "Faible",
             "Moyenne",
@@ -690,114 +779,192 @@ private:
         });
 
         dateInput = new QDateTimeEdit(
-            QDateTime::currentDateTime());
+            QDateTime::currentDateTime()
+            );
 
-        dateInput->setDisplayFormat("dd/MM/yyyy HH:mm");
+        dateInput->setDisplayFormat(
+            "dd/MM/yyyy HH:mm"
+            );
+
         dateInput->setCalendarPopup(true);
 
         victimsInput = new QSpinBox;
         victimsInput->setRange(0, 999);
 
         addressInput = new QLineEdit;
+
         addressInput->setPlaceholderText(
-            "Ex. Tunis, Centre-ville");
+            "Ex. Tunis, Centre-ville"
+            );
 
         descriptionInput = new QTextEdit;
-        descriptionInput->setFixedHeight(92);
+
+        descriptionInput->setFixedHeight(90);
+
         descriptionInput->setPlaceholderText(
-            "Décrivez brièvement la situation et les risques observés...");
+            "Décrivez brièvement la situation et les risques observés..."
+            );
 
         statusInput = new QComboBox;
+
         statusInput->addItems({
             "Signalé",
             "En cours",
             "Terminé"
         });
 
-        auto *grid = new QGridLayout;
-        grid->setHorizontalSpacing(14);
-        grid->setVerticalSpacing(17);
+        auto *formGrid = new QGridLayout;
 
-        grid->addLayout(
-            field("Type d'incident", typeInput),
-            0, 0);
+        formGrid->setHorizontalSpacing(14);
+        formGrid->setVerticalSpacing(14);
 
-        grid->addLayout(
-            field("Niveau de gravité", gravityInput),
-            0, 1);
+        formGrid->addLayout(
+            createField(
+                "Type d'incident",
+                typeInput
+                ),
+            0,
+            0
+            );
 
-        grid->addLayout(
-            field("Date et heure", dateInput),
-            1, 0);
+        formGrid->addLayout(
+            createField(
+                "Niveau de gravité",
+                gravityInput
+                ),
+            0,
+            1
+            );
 
-        grid->addLayout(
-            field("Nombre de victimes", victimsInput),
-            1, 1);
+        formGrid->addLayout(
+            createField(
+                "Date et heure",
+                dateInput
+                ),
+            1,
+            0
+            );
 
-        grid->addLayout(
-            field("Adresse", addressInput),
-            2, 0, 1, 2);
+        formGrid->addLayout(
+            createField(
+                "Nombre de victimes",
+                victimsInput
+                ),
+            1,
+            1
+            );
 
-        grid->addLayout(
-            field("Description", descriptionInput),
-            3, 0, 1, 2);
+        formGrid->addLayout(
+            createField(
+                "Adresse",
+                addressInput
+                ),
+            2,
+            0,
+            1,
+            2
+            );
 
-        grid->addLayout(
-            field("Statut", statusInput),
-            4, 0, 1, 2);
+        formGrid->addLayout(
+            createField(
+                "Description",
+                descriptionInput
+                ),
+            3,
+            0,
+            1,
+            2
+            );
 
-        form->addLayout(grid);
-        form->addStretch();
+        formGrid->addLayout(
+            createField(
+                "Statut",
+                statusInput
+                ),
+            4,
+            0,
+            1,
+            2
+            );
 
-        auto *actions = new QHBoxLayout;
-        actions->setSpacing(10);
+        formLayout->addLayout(formGrid);
+        formLayout->addStretch();
 
-        auto *addButton = new QPushButton("Ajouter");
-        auto *editButton = new QPushButton("Modifier");
-        auto *archiveButton = new QPushButton("Archiver");
+        auto *formButtons = new QGridLayout;
+
+        formButtons->setSpacing(9);
+
+        auto *addButton =
+            new QPushButton("＋ Ajouter");
+
+        auto *editButton =
+            new QPushButton("✎ Modifier");
+
+        auto *archiveButton =
+            new QPushButton("▣ Archiver");
+
+        auto *deleteButton =
+            new QPushButton("✕ Supprimer");
 
         addButton->setObjectName("primary");
         editButton->setObjectName("outline");
-        archiveButton->setObjectName("subtle");
+        archiveButton->setObjectName("archive");
+        deleteButton->setObjectName("danger");
 
-        actions->addWidget(addButton);
-        actions->addWidget(editButton);
-        actions->addWidget(archiveButton);
-        actions->addStretch();
+        formButtons->addWidget(
+            addButton, 0, 0
+            );
 
-        form->addLayout(actions);
+        formButtons->addWidget(
+            editButton, 0, 1
+            );
 
-        auto *listCard = card();
-        columns->addWidget(listCard, 53);
+        formButtons->addWidget(
+            archiveButton, 1, 0
+            );
 
-        auto *list = new QVBoxLayout(listCard);
-        list->setContentsMargins(23, 23, 23, 23);
-        list->setSpacing(16);
+        formButtons->addWidget(
+            deleteButton, 1, 1
+            );
 
-        auto *listTop = new QHBoxLayout;
+        formLayout->addLayout(formButtons);
 
-        auto *listIcon = new QLabel("☷");
-        listIcon->setObjectName("titleIcon");
-        listTop->addWidget(listIcon);
+        auto *listCard = createCard();
+        columnsLayout->addWidget(listCard, 54);
 
-        auto *listTitle = new QLabel("Liste des incidents");
+        auto *listLayout = new QVBoxLayout(listCard);
+
+        listLayout->setContentsMargins(
+            23, 23, 23, 23
+            );
+
+        listLayout->setSpacing(14);
+
+        auto *listHeader = new QHBoxLayout;
+
+        auto *listTitle =
+            new QLabel("☷  Liste des incidents");
+
         listTitle->setObjectName("cardTitle");
-        listTop->addWidget(listTitle);
-
-        listTop->addStretch();
 
         countLabel = new QLabel;
         countLabel->setObjectName("count");
-        listTop->addWidget(countLabel);
 
-        list->addLayout(listTop);
+        listHeader->addWidget(listTitle);
+        listHeader->addStretch();
+        listHeader->addWidget(countLabel);
+
+        listLayout->addLayout(listHeader);
 
         searchInput = new QLineEdit;
-        searchInput->setPlaceholderText(
-            "Rechercher par type ou adresse...");
 
-        filterInput = new QComboBox;
-        filterInput->addItems({
+        searchInput->setPlaceholderText(
+            "⌕  Rechercher par type, adresse ou ID..."
+            );
+
+        gravityFilter = new QComboBox;
+
+        gravityFilter->addItems({
             "Toutes gravités",
             "Faible",
             "Moyenne",
@@ -805,12 +972,15 @@ private:
             "Critique"
         });
 
-        auto *searchLine = new QHBoxLayout;
-        searchLine->addWidget(searchInput, 2);
-        searchLine->addWidget(filterInput, 1);
-        list->addLayout(searchLine);
+        auto *searchLayout = new QHBoxLayout;
+
+        searchLayout->addWidget(searchInput, 2);
+        searchLayout->addWidget(gravityFilter, 1);
+
+        listLayout->addLayout(searchLayout);
 
         sortInput = new QComboBox;
+
         sortInput->addItems({
             "Date : récente d'abord",
             "Date : ancienne d'abord",
@@ -818,11 +988,16 @@ private:
             "Gravité : faible d'abord"
         });
 
-        auto *sortLine = new QHBoxLayout;
-        sortLine->addWidget(caption("Trier par :"));
-        sortLine->addWidget(sortInput);
-        sortLine->addStretch();
-        list->addLayout(sortLine);
+        auto *sortLayout = new QHBoxLayout;
+
+        sortLayout->addWidget(
+            new QLabel("Trier par :")
+            );
+
+        sortLayout->addWidget(sortInput);
+        sortLayout->addStretch();
+
+        listLayout->addLayout(sortLayout);
 
         table = new QTableWidget(0, 6);
 
@@ -836,71 +1011,113 @@ private:
         });
 
         table->horizontalHeader()->setSectionResizeMode(
-            QHeaderView::Stretch);
+            QHeaderView::Stretch
+            );
+
+        table->horizontalHeader()->setSectionResizeMode(
+            0,
+            QHeaderView::ResizeToContents
+            );
+
+        table->horizontalHeader()->setSectionResizeMode(
+            5,
+            QHeaderView::ResizeToContents
+            );
 
         table->setEditTriggers(
-            QAbstractItemView::NoEditTriggers);
+            QAbstractItemView::NoEditTriggers
+            );
 
         table->setSelectionBehavior(
-            QAbstractItemView::SelectRows);
+            QAbstractItemView::SelectRows
+            );
 
         table->setSelectionMode(
-            QAbstractItemView::SingleSelection);
+            QAbstractItemView::SingleSelection
+            );
 
         table->verticalHeader()->hide();
         table->setAlternatingRowColors(true);
         table->setMinimumHeight(280);
 
-        list->addWidget(table, 1);
+        listLayout->addWidget(table, 1);
 
-        auto *alertCard = new QFrame;
-        alertCard->setObjectName("priorityCard");
+        auto *priorityCard = new QFrame;
+        priorityCard->setObjectName("priorityCard");
 
-        auto *alertRow = new QHBoxLayout(alertCard);
-        alertRow->setContentsMargins(18, 17, 18, 17);
-        alertRow->setSpacing(14);
+        auto *priorityLayout =
+            new QHBoxLayout(priorityCard);
 
-        auto *alertSymbol = new QLabel("⚠");
-        alertSymbol->setObjectName("alertSymbol");
-        alertRow->addWidget(alertSymbol);
+        priorityLayout->setContentsMargins(
+            18, 15, 18, 15
+            );
 
-        auto *alertColumn = new QVBoxLayout;
+        auto *warningIcon = new QLabel("⚠");
 
-        auto *alertHeading = new QLabel("Alerte de priorité");
-        alertHeading->setObjectName("alertHeading");
-        alertColumn->addWidget(alertHeading);
+        warningIcon->setStyleSheet(
+            "color:#c1121f;"
+            "font-size:32px;"
+            "font-weight:800;"
+            );
 
-        alertLabel = new QLabel;
-        alertLabel->setObjectName("alertText");
-        alertLabel->setWordWrap(true);
-        alertColumn->addWidget(alertLabel);
+        auto *priorityTextLayout =
+            new QVBoxLayout;
+
+        auto *priorityTitle =
+            new QLabel("Alerte de priorité");
+
+        priorityTitle->setObjectName("alertTitle");
+
+        alertText = new QLabel;
+        alertText->setObjectName("alertText");
+        alertText->setWordWrap(true);
 
         alertDetails = new QLabel;
         alertDetails->setObjectName("alertText");
         alertDetails->setWordWrap(true);
-        alertColumn->addWidget(alertDetails);
 
-        alertRow->addLayout(alertColumn, 1);
+        priorityTextLayout->addWidget(
+            priorityTitle
+            );
 
-        alertButton = new QPushButton("Voir les détails  ›");
+        priorityTextLayout->addWidget(
+            alertText
+            );
+
+        priorityTextLayout->addWidget(
+            alertDetails
+            );
+
+        alertButton =
+            new QPushButton("Voir les détails  ›");
+
         alertButton->setObjectName("primary");
-        alertRow->addWidget(alertButton);
 
-        list->addWidget(alertCard);
+        priorityLayout->addWidget(warningIcon);
+        priorityLayout->addLayout(
+            priorityTextLayout,
+            1
+            );
+        priorityLayout->addWidget(alertButton);
 
-        auto *bottom = new QHBoxLayout;
+        listLayout->addWidget(priorityCard);
 
-        auto *statsButton = new QPushButton("Statistiques");
-        auto *pdfButton = new QPushButton("Exporter en PDF");
+        auto *bottomButtons = new QHBoxLayout;
 
-        statsButton->setObjectName("outline");
+        auto *statisticsButton =
+            new QPushButton("▥ Statistiques");
+
+        auto *pdfButton =
+            new QPushButton("Exporter en PDF");
+
+        statisticsButton->setObjectName("outline");
         pdfButton->setObjectName("outline");
 
-        bottom->addStretch();
-        bottom->addWidget(statsButton);
-        bottom->addWidget(pdfButton);
+        bottomButtons->addStretch();
+        bottomButtons->addWidget(statisticsButton);
+        bottomButtons->addWidget(pdfButton);
 
-        list->addLayout(bottom);
+        listLayout->addLayout(bottomButtons);
 
         connect(
             addButton,
@@ -927,6 +1144,14 @@ private:
             });
 
         connect(
+            deleteButton,
+            &QPushButton::clicked,
+            this,
+            [this] {
+                deleteIncident();
+            });
+
+        connect(
             searchInput,
             &QLineEdit::textChanged,
             this,
@@ -935,8 +1160,10 @@ private:
             });
 
         connect(
-            filterInput,
-            &QComboBox::currentIndexChanged,
+            gravityFilter,
+            qOverload<int>(
+                &QComboBox::currentIndexChanged
+                ),
             this,
             [this] {
                 refreshTable();
@@ -944,7 +1171,9 @@ private:
 
         connect(
             sortInput,
-            &QComboBox::currentIndexChanged,
+            qOverload<int>(
+                &QComboBox::currentIndexChanged
+                ),
             this,
             [this] {
                 refreshTable();
@@ -955,11 +1184,11 @@ private:
             &QTableWidget::cellClicked,
             this,
             [this](int row, int) {
-                chooseRow(row);
+                selectTableRow(row);
             });
 
         connect(
-            statsButton,
+            statisticsButton,
             &QPushButton::clicked,
             this,
             [this] {
@@ -971,7 +1200,7 @@ private:
             &QPushButton::clicked,
             this,
             [this] {
-                exportPdf();
+                exportIncidentsPdf();
             });
 
         connect(
@@ -981,13 +1210,25 @@ private:
             [this] {
                 showUrgentIncident();
             });
+
+        animateEntrance(
+            sidebar,
+            70,
+            QPoint(-45, 0)
+            );
+
+        animateEntrance(
+            contentWidget,
+            150,
+            QPoint(35, 0)
+            );
     }
 
-    Incident *selected()
+    Incident *selectedIncident()
     {
-        for (auto &incident : incidents) {
-            if (incident.id == selectedId &&
-                !incident.archived) {
+        for (Incident &incident : incidents) {
+            if (incident.id == selectedId
+                && !incident.archived) {
                 return &incident;
             }
         }
@@ -998,18 +1239,54 @@ private:
     void clearForm()
     {
         selectedId = -1;
+
         table->clearSelection();
 
         typeInput->setCurrentIndex(0);
         gravityInput->setCurrentIndex(0);
-        dateInput->setDateTime(QDateTime::currentDateTime());
+
+        dateInput->setDateTime(
+            QDateTime::currentDateTime()
+            );
+
         victimsInput->setValue(0);
         addressInput->clear();
         descriptionInput->clear();
         statusInput->setCurrentIndex(0);
     }
 
-    void chooseRow(int row)
+    void fillForm(const Incident &incident)
+    {
+        typeInput->setCurrentText(
+            incident.type
+            );
+
+        gravityInput->setCurrentText(
+            incident.gravity
+            );
+
+        dateInput->setDateTime(
+            incident.date
+            );
+
+        victimsInput->setValue(
+            incident.victims
+            );
+
+        addressInput->setText(
+            incident.address
+            );
+
+        descriptionInput->setPlainText(
+            incident.description
+            );
+
+        statusInput->setCurrentText(
+            incident.status
+            );
+    }
+
+    void selectTableRow(int row)
     {
         if (row < 0 || !table->item(row, 0))
             return;
@@ -1019,56 +1296,69 @@ private:
                 ->data(Qt::UserRole)
                 .toInt();
 
-        Incident *incident = selected();
+        Incident *incident =
+            selectedIncident();
 
-        if (!incident)
-            return;
-
-        typeInput->setCurrentText(incident->type);
-        gravityInput->setCurrentText(incident->gravity);
-        dateInput->setDateTime(incident->date);
-        victimsInput->setValue(incident->victims);
-        addressInput->setText(incident->address);
-        descriptionInput->setPlainText(incident->description);
-        statusInput->setCurrentText(incident->status);
+        if (incident)
+            fillForm(*incident);
     }
 
-    bool validate()
+    bool validateForm()
     {
-        if (addressInput->text().trimmed().isEmpty()) {
-            QMessageBox::warning(
-                this,
-                "Adresse manquante",
-                "Saisissez l'adresse de l'incident.");
-
-            addressInput->setFocus();
-            return false;
+        if (!addressInput
+                 ->text()
+                 .trimmed()
+                 .isEmpty()) {
+            return true;
         }
 
-        return true;
+        QMessageBox::warning(
+            this,
+            "Adresse manquante",
+            "Saisissez l'adresse de l'incident."
+            );
+
+        addressInput->setFocus();
+
+        return false;
     }
 
-    void copyFormTo(Incident &incident)
+    void copyFormToIncident(Incident &incident)
     {
-        incident.type = typeInput->currentText();
-        incident.gravity = gravityInput->currentText();
-        incident.date = dateInput->dateTime();
-        incident.victims = victimsInput->value();
-        incident.address = addressInput->text().trimmed();
+        incident.type =
+            typeInput->currentText();
+
+        incident.gravity =
+            gravityInput->currentText();
+
+        incident.date =
+            dateInput->dateTime();
+
+        incident.victims =
+            victimsInput->value();
+
+        incident.address =
+            addressInput->text().trimmed();
+
         incident.description =
-            descriptionInput->toPlainText().trimmed();
-        incident.status = statusInput->currentText();
+            descriptionInput
+                ->toPlainText()
+                .trimmed();
+
+        incident.status =
+            statusInput->currentText();
     }
 
     void addIncident()
     {
-        if (!validate())
+        if (!validateForm())
             return;
 
         Incident incident;
+
         incident.id = nextId++;
 
-        copyFormTo(incident);
+        copyFormToIncident(incident);
         incidents.push_back(incident);
 
         clearForm();
@@ -1077,34 +1367,39 @@ private:
 
     void editIncident()
     {
-        Incident *incident = selected();
+        Incident *incident =
+            selectedIncident();
 
         if (!incident) {
             QMessageBox::information(
                 this,
                 "Modifier",
-                "Sélectionnez d'abord un incident dans la liste.");
+                "Sélectionnez d'abord un incident."
+                );
 
             return;
         }
 
-        if (!validate())
+        if (!validateForm())
             return;
 
-        copyFormTo(*incident);
+        copyFormToIncident(*incident);
+
         clearForm();
         refreshTable();
     }
 
     void archiveIncident()
     {
-        Incident *incident = selected();
+        Incident *incident =
+            selectedIncident();
 
         if (!incident) {
             QMessageBox::information(
                 this,
                 "Archiver",
-                "Sélectionnez d'abord un incident dans la liste.");
+                "Sélectionnez d'abord un incident."
+                );
 
             return;
         }
@@ -1112,8 +1407,8 @@ private:
         if (QMessageBox::question(
                 this,
                 "Archiver",
-                "Archiver l'incident sélectionné ?")
-            != QMessageBox::Yes) {
+                "Archiver l'incident sélectionné ?"
+                ) != QMessageBox::Yes) {
             return;
         }
 
@@ -1123,1307 +1418,1164 @@ private:
         refreshTable();
     }
 
-    void showUrgentIncident()
+    void deleteIncident()
     {
-        int urgentId = -1;
+        Incident *incident =
+            selectedIncident();
 
-        for (const auto &incident : incidents) {
-            if (!incident.archived &&
-                priority(incident) == "Urgente" &&
-                incident.status != "Terminé") {
+        if (!incident) {
+            QMessageBox::information(
+                this,
+                "Supprimer",
+                "Sélectionnez d'abord un incident."
+                );
 
-                urgentId = incident.id;
-                break;
-            }
-        }
-
-        if (urgentId < 0)
             return;
-
-        searchInput->clear();
-        filterInput->setCurrentIndex(0);
-        refreshTable();
-
-        for (int row = 0;
-             row < table->rowCount();
-             ++row) {
-
-            const int id =
-                table->item(row, 0)
-                    ->data(Qt::UserRole)
-                    .toInt();
-
-            if (id == urgentId) {
-                table->selectRow(row);
-                chooseRow(row);
-                table->scrollToItem(table->item(row, 0));
-                return;
-            }
         }
+
+        int id = incident->id;
+
+        QString message =
+            QString(
+                "Supprimer définitivement %1 ?\n"
+                "Cette action est irréversible."
+                ).arg(incidentNumber(id));
+
+        if (QMessageBox::warning(
+                this,
+                "Suppression définitive",
+                message,
+                QMessageBox::Yes
+                    | QMessageBox::No,
+                QMessageBox::No
+                ) != QMessageBox::Yes) {
+            return;
+        }
+
+        incidents.erase(
+            std::remove_if(
+                incidents.begin(),
+                incidents.end(),
+                [id](const Incident &item) {
+                    return item.id == id;
+                }),
+            incidents.end()
+            );
+
+        clearForm();
+        refreshTable();
+    }
+
+    int gravityRank(
+        const QString &gravity) const
+    {
+        if (gravity == "Critique")
+            return 4;
+
+        if (gravity == "Élevée")
+            return 3;
+
+        if (gravity == "Moyenne")
+            return 2;
+
+        return 1;
+    }
+
+    QColor gravityBackground(
+        const QString &gravity) const
+    {
+        if (gravity == "Critique")
+            return QColor("#ffd8dc");
+
+        if (gravity == "Élevée")
+            return QColor("#ffe1e4");
+
+        if (gravity == "Moyenne")
+            return QColor("#ffe9c3");
+
+        return QColor("#d7f4df");
+    }
+
+    QColor gravityForeground(
+        const QString &gravity) const
+    {
+        if (gravity == "Faible")
+            return QColor("#176d37");
+
+        if (gravity == "Critique")
+            return QColor("#9d1020");
+
+        return QColor("#42383c");
     }
 
     void refreshTable()
     {
         std::vector<const Incident *> visible;
 
-        const QString search =
+        QString search =
             searchInput->text().trimmed();
 
-        const QString filter =
-            filterInput->currentText();
+        QString filter =
+            gravityFilter->currentText();
 
-        for (const auto &incident : incidents) {
+        for (const Incident &incident : incidents) {
             if (incident.archived)
                 continue;
 
-            if (filter != "Toutes gravités" &&
-                incident.gravity != filter) {
+            if (filter != "Toutes gravités"
+                && incident.gravity != filter) {
                 continue;
             }
 
-            if (!search.isEmpty() &&
-                !incident.type.contains(
+            bool matches =
+                search.isEmpty()
+                || incident.type.contains(
                     search,
-                    Qt::CaseInsensitive) &&
-                !incident.address.contains(
+                    Qt::CaseInsensitive
+                    )
+                || incident.address.contains(
                     search,
-                    Qt::CaseInsensitive)) {
-                continue;
-            }
+                    Qt::CaseInsensitive
+                    )
+                || incidentNumber(incident.id)
+                       .contains(
+                           search,
+                           Qt::CaseInsensitive
+                           );
 
-            visible.push_back(&incident);
+            if (matches)
+                visible.push_back(&incident);
         }
 
-        auto gravityRank =
-            [](const QString &gravity) {
-                if (gravity == "Critique")
-                    return 4;
-
-                if (gravity == "Élevée")
-                    return 3;
-
-                if (gravity == "Moyenne")
-                    return 2;
-
-                return 1;
-            };
-
-        const int sort = sortInput->currentIndex();
+        int sortMode =
+            sortInput->currentIndex();
 
         std::stable_sort(
             visible.begin(),
             visible.end(),
-            [sort, &gravityRank](
+            [this, sortMode](
                 const Incident *first,
-                const Incident *second) {
-
-                if (sort == 0)
+                const Incident *second
+                ) {
+                if (sortMode == 0)
                     return first->date > second->date;
 
-                if (sort == 1)
+                if (sortMode == 1)
                     return first->date < second->date;
 
-                if (sort == 2) {
-                    return gravityRank(first->gravity) >
-                           gravityRank(second->gravity);
+                if (sortMode == 2) {
+                    return gravityRank(first->gravity)
+                    > gravityRank(second->gravity);
                 }
 
-                return gravityRank(first->gravity) <
-                       gravityRank(second->gravity);
+                return gravityRank(first->gravity)
+                       < gravityRank(second->gravity);
             });
 
         table->setRowCount(0);
 
         for (const Incident *incident : visible) {
-            const int row = table->rowCount();
+            int row = table->rowCount();
             table->insertRow(row);
 
-            const QStringList values = {
-                QString("INC-%1")
-            .arg(
-                incident->id,
-                3,
-                10,
-                QChar('0')),
-
+            QStringList values = {
+                incidentNumber(incident->id),
                 incident->type,
-                incident->address
-        };
+                incident->address,
+                incident->gravity,
+                incident->status
+            };
 
-        for (int column = 0;
-             column < values.size();
-             ++column) {
+            for (int column = 0;
+                 column < values.size();
+                 ++column) {
+                auto *item =
+                    new QTableWidgetItem(
+                        values[column]
+                        );
 
-            auto *cell =
-                new QTableWidgetItem(values[column]);
+                item->setData(
+                    Qt::UserRole,
+                    incident->id
+                    );
 
-            cell->setData(
-                Qt::UserRole,
-                incident->id);
+                table->setItem(
+                    row,
+                    column,
+                    item
+                    );
+            }
 
-            table->setItem(
+            table->item(row, 3)->setBackground(
+                gravityBackground(
+                    incident->gravity
+                    )
+                );
+
+            table->item(row, 3)->setForeground(
+                gravityForeground(
+                    incident->gravity
+                    )
+                );
+
+            if (incident->gravity == "Faible") {
+                QFont font =
+                    table->item(row, 3)->font();
+
+                font.setBold(true);
+
+                table->item(row, 3)
+                    ->setFont(font);
+            }
+
+            auto *actionsWidget = new QWidget;
+            auto *actionsLayout =
+                new QHBoxLayout(actionsWidget);
+
+            actionsLayout->setContentsMargins(
+                3, 3, 3, 3
+                );
+
+            actionsLayout->setSpacing(4);
+
+            auto *viewButton =
+                new QPushButton("Voir");
+
+            auto *archiveButton =
+                new QPushButton("Archiver");
+
+            auto *deleteButton =
+                new QPushButton("Supprimer");
+
+            viewButton->setObjectName(
+                "tableAction"
+                );
+
+            archiveButton->setObjectName(
+                "tableAction"
+                );
+
+            deleteButton->setObjectName(
+                "tableDelete"
+                );
+
+            actionsLayout->addWidget(viewButton);
+            actionsLayout->addWidget(archiveButton);
+            actionsLayout->addWidget(deleteButton);
+
+            table->setCellWidget(
                 row,
-                column,
-                cell);
+                5,
+                actionsWidget
+                );
+
+            int id = incident->id;
+
+            connect(
+                viewButton,
+                &QPushButton::clicked,
+                this,
+                [this, id] {
+                    selectedId = id;
+
+                    Incident *incident =
+                        selectedIncident();
+
+                    if (incident)
+                        fillForm(*incident);
+                });
+
+            connect(
+                archiveButton,
+                &QPushButton::clicked,
+                this,
+                [this, id] {
+                    selectedId = id;
+                    archiveIncident();
+                });
+
+            connect(
+                deleteButton,
+                &QPushButton::clicked,
+                this,
+                [this, id] {
+                    selectedId = id;
+                    deleteIncident();
+                });
+
+            table->setRowHeight(row, 48);
         }
 
-        auto *gravityCell = new QWidget;
-        gravityCell->setStyleSheet(
-            "background:transparent;");
-
-        auto *gravityLayout =
-            new QHBoxLayout(gravityCell);
-
-        gravityLayout->setContentsMargins(
-            5, 4, 5, 4);
-
-        auto *gravityBadge =
-            new QLabel(incident->gravity);
-
-        gravityBadge->setAlignment(Qt::AlignCenter);
-
-        gravityBadge->setObjectName(
-            incident->gravity == "Critique"
-                ? "gravityCritical"
-                : incident->gravity == "Élevée"
-                      ? "gravityHigh"
-                      : incident->gravity == "Moyenne"
-                            ? "gravityMedium"
-                            : "gravityLow");
-
-        gravityLayout->addWidget(gravityBadge);
-        gravityLayout->addStretch();
-
-        table->setCellWidget(
-            row,
-            3,
-            gravityCell);
-
-        auto *statusWidget = new QWidget;
-
-        auto *statusLayout =
-            new QHBoxLayout(statusWidget);
-
-        statusLayout->setContentsMargins(
-            4, 5, 4, 5);
-
-        auto *statusBadge =
-            new QLabel(incident->status);
-
-        statusBadge->setAlignment(Qt::AlignCenter);
-
-        statusBadge->setObjectName(
-            incident->status == "Terminé"
-                ? "statusDone"
-                : incident->status == "En cours"
-                      ? "statusActive"
-                      : "statusOpen");
-
-        statusLayout->addWidget(statusBadge);
-        statusLayout->addStretch();
-
-        table->setCellWidget(
-            row,
-            4,
-            statusWidget);
-
-        auto *actionCell = new QWidget;
-
-        auto *actionLayout =
-            new QHBoxLayout(actionCell);
-
-        actionLayout->setContentsMargins(
-            0, 0, 0, 0);
-
-        auto *viewButton = new QPushButton("Voir");
-        viewButton->setObjectName("tableAction");
-
-        auto *rowArchiveButton =
-            new QPushButton("Archiver");
-
-        rowArchiveButton->setObjectName("tableAction");
-
-        actionLayout->addWidget(viewButton);
-        actionLayout->addWidget(rowArchiveButton);
-
-        table->setCellWidget(
-            row,
-            5,
-            actionCell);
-
-        const int incidentId = incident->id;
-
-        connect(
-            viewButton,
-            &QPushButton::clicked,
-            this,
-            [this, incidentId, row] {
-                selectedId = incidentId;
-                table->selectRow(row);
-                chooseRow(row);
-            });
-
-        connect(
-            rowArchiveButton,
-            &QPushButton::clicked,
-            this,
-            [this, incidentId] {
-                selectedId = incidentId;
-                archiveIncident();
-            });
-
-        table->setRowHeight(row, 50);
-    }
-
-    countLabel->setText(
-        QString("%1 incidents")
-            .arg(int(visible.size())));
-
-    int urgent = 0;
-    const Incident *firstUrgent = nullptr;
-
-    for (const auto &incident : incidents) {
-        if (!incident.archived &&
-            priority(incident) == "Urgente" &&
-            incident.status != "Terminé") {
-
-            if (!firstUrgent)
-                firstUrgent = &incident;
-
-            ++urgent;
-        }
-    }
-
-    if (urgent > 0) {
-        alertLabel->setText(
-            QString(
-                "%1 incident(s) urgents nécessitent "
-                "une intervention immédiate.")
-                .arg(urgent));
-    } else {
-        alertLabel->setText(
-            "Aucun incident urgent en attente.");
-    }
-
-    if (firstUrgent) {
-        alertDetails->setText(
-            QString("INC-%1 — %2 — %3")
+        countLabel->setText(
+            QString("%1 incidents")
                 .arg(
-                    firstUrgent->id,
-                    3,
-                    10,
-                    QChar('0'))
-                .arg(
-                    firstUrgent->type,
-                    firstUrgent->address));
-    } else {
-        alertDetails->setText(
-            "La liste des incidents est à jour.");
-    }
+                    static_cast<int>(
+                        visible.size()
+                        )
+                    )
+            );
 
-    alertButton->setEnabled(
-        firstUrgent != nullptr);
-}
+        int urgentCount = 0;
+        const Incident *firstUrgent = nullptr;
 
-void showStatistics()
-{
-    int total = 0;
-    int critiques = 0;
-    int enCours = 0;
-    int termines = 0;
+        for (const Incident &incident : incidents) {
+            if (!incident.archived
+                && calculatePriority(incident)
+                       == "Urgente"
+                && incident.status != "Terminé") {
+                if (!firstUrgent)
+                    firstUrgent = &incident;
 
-    const QStringList types = {
-        "Incendie",
-        "Accident",
-        "Fuite de gaz",
-        "Sauvetage"
-    };
-
-    const QStringList gravites = {
-        "Critique",
-        "Élevée",
-        "Moyenne",
-        "Faible"
-    };
-
-    const QStringList statuts = {
-        "Signalé",
-        "En cours",
-        "Terminé"
-    };
-
-    std::vector<int> parType(types.size(), 0);
-    std::vector<int> parGravite(gravites.size(), 0);
-    std::vector<int> parStatut(statuts.size(), 0);
-
-    std::vector<QString> nomsZones;
-    std::vector<int> parZone;
-
-    for (const Incident &incident : incidents) {
-        if (incident.archived)
-            continue;
-
-        ++total;
-
-        if (incident.gravity == "Critique")
-            ++critiques;
-
-        if (incident.status == "En cours")
-            ++enCours;
-
-        if (incident.status == "Terminé")
-            ++termines;
-
-        int index = types.indexOf(incident.type);
-
-        if (index >= 0)
-            ++parType[index];
-
-        index = gravites.indexOf(incident.gravity);
-
-        if (index >= 0)
-            ++parGravite[index];
-
-        index = statuts.indexOf(incident.status);
-
-        if (index >= 0)
-            ++parStatut[index];
-
-        QString zone =
-            incident.address.trimmed();
-
-        if (zone.isEmpty())
-            zone = "Non précisée";
-
-        int zoneIndex = -1;
-
-        for (int i = 0;
-             i < static_cast<int>(nomsZones.size());
-             ++i) {
-
-            if (nomsZones[i].compare(
-                    zone,
-                    Qt::CaseInsensitive) == 0) {
-
-                zoneIndex = i;
-                break;
+                ++urgentCount;
             }
         }
 
-        if (zoneIndex == -1) {
-            nomsZones.push_back(zone);
-            parZone.push_back(1);
+        if (urgentCount > 0) {
+            alertText->setText(
+                QString(
+                    "%1 incident(s) urgent(s) "
+                    "nécessitent une intervention immédiate."
+                    ).arg(urgentCount)
+                );
+
+            alertDetails->setText(
+                QString("%1 — %2 — %3")
+                    .arg(
+                        incidentNumber(
+                            firstUrgent->id
+                            )
+                        )
+                    .arg(firstUrgent->type)
+                    .arg(firstUrgent->address)
+                );
         } else {
-            ++parZone[zoneIndex];
+            alertText->setText(
+                "Aucun incident urgent en attente."
+                );
+
+            alertDetails->setText(
+                "La liste des incidents est à jour."
+                );
+        }
+
+        alertButton->setEnabled(
+            firstUrgent != nullptr
+            );
+
+        animateRefresh(table);
+    }
+
+    void showUrgentIncident()
+    {
+        for (const Incident &incident : incidents) {
+            if (!incident.archived
+                && calculatePriority(incident)
+                       == "Urgente"
+                && incident.status != "Terminé") {
+                selectedId = incident.id;
+                fillForm(incident);
+
+                for (int row = 0;
+                     row < table->rowCount();
+                     ++row) {
+                    if (table->item(row, 0)
+                        && table->item(row, 0)
+                                   ->data(Qt::UserRole)
+                                   .toInt()
+                               == incident.id) {
+                        table->selectRow(row);
+
+                        table->scrollToItem(
+                            table->item(row, 0)
+                            );
+
+                        break;
+                    }
+                }
+
+                return;
+            }
         }
     }
 
-    QDialog dialog(this);
+    void showStatistics()
+    {
+        int total = 0;
+        int critical = 0;
+        int low = 0;
+        int active = 0;
+        int finished = 0;
 
-    dialog.setWindowTitle(
-        "Statistiques — Gestion des incidents");
+        QMap<QString, int> byType;
+        QMap<QString, int> byGravity;
+        QMap<QString, int> byStatus;
+        QMap<QString, int> byZone;
 
-    dialog.resize(1280, 760);
-    dialog.setMinimumSize(1050, 680);
+        for (const Incident &incident : incidents) {
+            if (incident.archived)
+                continue;
 
-    dialog.setStyleSheet(R"CSS(
-            QDialog {
-                background: #f6f2ef;
+            ++total;
+            ++byType[incident.type];
+            ++byGravity[incident.gravity];
+            ++byStatus[incident.status];
+
+            ++byZone[
+                incident.address.isEmpty()
+                    ? "Non précisée"
+                    : incident.address
+            ];
+
+            if (incident.gravity == "Critique")
+                ++critical;
+
+            if (incident.gravity == "Faible")
+                ++low;
+
+            if (incident.status == "En cours")
+                ++active;
+
+            if (incident.status == "Terminé")
+                ++finished;
+        }
+
+        QDialog dialog(this);
+
+        dialog.setWindowTitle(
+            "Statistiques — Gestion des incidents"
+            );
+
+        dialog.resize(1280, 760);
+        dialog.setMinimumSize(1000, 650);
+
+        dialog.setStyleSheet(R"CSS(
+            QDialog,
+            QWidget#statisticsPage,
+            QScrollArea {
+                background: #f3f5f7;
                 font-family: "Segoe UI";
-                color: #28252d;
             }
 
             QFrame#statisticsSidebar {
                 background: qlineargradient(
-                    x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #b90000,
-                    stop:1 #970000
+                    x1:0, y1:0,
+                    x2:0, y2:1,
+                    stop:0 #27050c,
+                    stop:0.32 #59101a,
+                    stop:0.68 #a71928,
+                    stop:1 #d53d39
                 );
                 border: none;
             }
 
-            QLabel#statisticsBrand {
-                color: white;
-                font-size: 17px;
-                font-weight: 800;
-            }
-
-            QPushButton#statisticsNav {
-                background: transparent;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                text-align: left;
-                padding: 10px 15px;
-                font-size: 13px;
-            }
-
-            QPushButton#statisticsNavActive {
-                background: rgba(255,255,255,48);
-                color: white;
-                border: none;
-                border-radius: 8px;
-                text-align: left;
-                padding: 10px 15px;
-                font-size: 13px;
-                font-weight: 700;
-            }
-
             QLabel#statisticsTitle {
-                color: #25242b;
-                font-size: 25px;
+                color: #231f27;
+                font-size: 27px;
                 font-weight: 800;
-            }
-
-            QLabel#statisticsSubtitle {
-                color: #777077;
-                font-size: 12px;
             }
 
             QFrame#statisticsCard {
                 background: white;
-                border: 1px solid #eee7e3;
-                border-radius: 10px;
+                border: 1px solid #e7e9ed;
+                border-radius: 14px;
             }
 
             QLabel#statisticsCardTitle {
-                color: #302d33;
-                font-size: 14px;
+                color: #3b252a;
+                font-size: 15px;
+                font-weight: 800;
+            }
+
+            QPushButton#statisticsButton {
+                color: #a61725;
+                background: white;
+                border: 2px solid #c94d59;
+                border-radius: 9px;
+                padding: 8px 13px;
                 font-weight: 700;
             }
 
-            QPushButton#statisticsTopButton {
+            QPushButton#statisticsNav {
+                color: white;
+                background: transparent;
+                border: none;
+                border-radius: 8px;
+                text-align: left;
+                padding: 10px 14px;
+            }
+
+            QPushButton#statisticsNavActive {
+                color: #9d1724;
                 background: white;
-                color: #9d1721;
-                border: 1px solid #e1c5c8;
+                border: none;
+                border-radius: 9px;
+                text-align: left;
+                padding: 10px 14px;
+                font-weight: 800;
+            }
+
+            QProgressBar {
+                background: #f3e4e6;
+                border: none;
                 border-radius: 7px;
-                padding: 8px 13px;
-                font-size: 11px;
-                font-weight: 700;
+                min-height: 14px;
+                text-align: center;
+            }
+
+            QProgressBar::chunk {
+                background: #b51c2a;
+                border-radius: 7px;
             }
         )CSS");
 
-    auto *root =
-        new QHBoxLayout(&dialog);
+        auto *rootLayout =
+            new QHBoxLayout(&dialog);
 
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+        rootLayout->setContentsMargins(
+            0, 0, 0, 0
+            );
 
-    auto *sidebar = new QFrame;
-    sidebar->setObjectName("statisticsSidebar");
-    sidebar->setFixedWidth(220);
+        rootLayout->setSpacing(0);
 
-    auto *sideLayout =
-        new QVBoxLayout(sidebar);
+        auto *statisticsSidebar = new QFrame;
 
-    sideLayout->setContentsMargins(
-        20, 24, 20, 24);
+        statisticsSidebar->setObjectName(
+            "statisticsSidebar"
+            );
 
-    auto *logo = new QLabel;
+        statisticsSidebar->setFixedWidth(225);
 
-    QPixmap logoImage(
-        ":/images/logo.png");
+        auto *sidebarLayout =
+            new QVBoxLayout(statisticsSidebar);
 
-    if (!logoImage.isNull()) {
-        logo->setPixmap(
-            logoImage.scaled(
-                92,
-                92,
-                Qt::KeepAspectRatio,
-                Qt::SmoothTransformation));
-    }
+        sidebarLayout->setContentsMargins(
+            18, 24, 18, 24
+            );
 
-    logo->setAlignment(Qt::AlignCenter);
-    sideLayout->addWidget(logo);
+        sidebarLayout->setSpacing(7);
 
-    auto *brand =
-        new QLabel("SMART FIRE\nSTATION");
+        auto *logoLabel = new QLabel;
+        logoLabel->setAlignment(Qt::AlignCenter);
 
-    brand->setObjectName("statisticsBrand");
-    brand->setAlignment(Qt::AlignCenter);
+        QPixmap logo = loadLogo();
 
-    sideLayout->addWidget(brand);
-    sideLayout->addSpacing(22);
-
-    const QStringList navigation = {
-        "Tableau de bord",
-        "Incidents",
-        "Interventions",
-        "Pompiers",
-        "Véhicules",
-        "Équipements",
-        "Rapports"
-    };
-
-    for (int i = 0;
-         i < navigation.size();
-         ++i) {
-
-        auto *button =
-            new QPushButton(navigation[i]);
-
-        button->setObjectName(
-            i == 1
-                ? "statisticsNavActive"
-                : "statisticsNav");
-
-        sideLayout->addWidget(button);
-
-        if (i == 1) {
-            connect(
-                button,
-                &QPushButton::clicked,
-                &dialog,
-                &QDialog::accept);
+        if (!logo.isNull()) {
+            logoLabel->setPixmap(
+                logo.scaled(
+                    90,
+                    90,
+                    Qt::KeepAspectRatio,
+                    Qt::SmoothTransformation
+                    )
+                );
         }
-    }
 
-    sideLayout->addStretch();
-    root->addWidget(sidebar);
+        sidebarLayout->addWidget(logoLabel);
 
-    auto *scroll = new QScrollArea;
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
+        auto *brandLabel = new QLabel(
+            "SMART FIRE\nSTATION"
+            );
 
-    auto *page = new QWidget;
+        brandLabel->setAlignment(
+            Qt::AlignCenter
+            );
 
-    auto *pageLayout =
-        new QVBoxLayout(page);
+        brandLabel->setStyleSheet(
+            "color:white;"
+            "font-size:17px;"
+            "font-weight:800;"
+            );
 
-    pageLayout->setContentsMargins(
-        28, 20, 28, 24);
+        sidebarLayout->addWidget(brandLabel);
+        sidebarLayout->addSpacing(18);
 
-    pageLayout->setSpacing(14);
+        const QList<QPair<QString, QString>>
+            navigation = {
+                {"⌂", "Tableau de bord"},
+                {"⚠", "Incidents"},
+                {"✚", "Interventions"},
+                {"♟", "Personnel"},
+                {"▰", "Véhicules"},
+                {"⚙", "Équipements"},
+                {"▥", "Rapports"}
+            };
 
-    auto *header = new QHBoxLayout;
-    auto *titles = new QVBoxLayout;
+        for (const auto &entry : navigation) {
+            QString icon = entry.first;
+            QString name = entry.second;
 
-    auto *pageTitle =
-        new QLabel(
-            "Statistiques — Gestion des incidents");
+            auto *button = new QPushButton(
+                icon + "   " + name
+                );
 
-    pageTitle->setObjectName("statisticsTitle");
+            button->setObjectName(
+                name == "Incidents"
+                    ? "statisticsNavActive"
+                    : "statisticsNav"
+                );
 
-    auto *subtitle =
-        new QLabel(
-            "Types, gravité, zones et suivi des incidents");
+            sidebarLayout->addWidget(button);
 
-    subtitle->setObjectName("statisticsSubtitle");
+            if (name == "Incidents") {
+                connect(
+                    button,
+                    &QPushButton::clicked,
+                    &dialog,
+                    &QDialog::accept
+                    );
+            }
+        }
 
-    titles->addWidget(pageTitle);
-    titles->addWidget(subtitle);
+        sidebarLayout->addStretch();
 
-    auto *returnButton =
-        new QPushButton("Retour à la liste");
+        rootLayout->addWidget(
+            statisticsSidebar
+            );
 
-    returnButton->setObjectName(
-        "statisticsTopButton");
+        auto *scrollArea = new QScrollArea;
 
-    auto *pdfButton =
-        new QPushButton("Exporter en PDF");
+        scrollArea->setWidgetResizable(true);
+        scrollArea->setFrameShape(
+            QFrame::NoFrame
+            );
 
-    pdfButton->setObjectName(
-        "statisticsTopButton");
+        auto *statisticsPage = new QWidget;
 
-    header->addLayout(titles);
-    header->addStretch();
-    header->addWidget(returnButton);
-    header->addWidget(pdfButton);
+        statisticsPage->setObjectName(
+            "statisticsPage"
+            );
 
-    pageLayout->addLayout(header);
+        auto *pageLayout =
+            new QVBoxLayout(statisticsPage);
 
-    auto createCounter =
-        [&](const QString &number,
-            const QString &text,
-            const QString &color) {
+        pageLayout->setContentsMargins(
+            28, 22, 28, 24
+            );
 
-            auto *panel = new QFrame;
-            panel->setObjectName("statisticsCard");
-            panel->setMinimumHeight(78);
+        pageLayout->setSpacing(14);
+
+        auto *headerLayout = new QHBoxLayout;
+
+        auto *titleLabel = new QLabel(
+            "Statistiques — Gestion des incidents"
+            );
+
+        titleLabel->setObjectName(
+            "statisticsTitle"
+            );
+
+        auto *backButton =
+            new QPushButton("Retour à la liste");
+
+        auto *exportButton =
+            new QPushButton("Exporter en PDF");
+
+        backButton->setObjectName(
+            "statisticsButton"
+            );
+
+        exportButton->setObjectName(
+            "statisticsButton"
+            );
+
+        headerLayout->addWidget(titleLabel);
+        headerLayout->addStretch();
+        headerLayout->addWidget(backButton);
+        headerLayout->addWidget(exportButton);
+
+        pageLayout->addLayout(headerLayout);
+
+        auto createCounter = [](
+                                 const QString &number,
+                                 const QString &text,
+                                 const QString &color
+                                 ) {
+            auto *card = new QFrame;
+            card->setObjectName(
+                "statisticsCard"
+                );
+
+            card->setMinimumHeight(85);
 
             auto *layout =
-                new QVBoxLayout(panel);
+                new QVBoxLayout(card);
 
-            layout->setContentsMargins(
-                15, 9, 15, 9);
-
-            auto *valueLabel =
+            auto *numberLabel =
                 new QLabel(number);
 
-            valueLabel->setStyleSheet(
+            numberLabel->setStyleSheet(
                 QString(
-                    "font-size:25px;"
+                    "font-size:26px;"
                     "font-weight:800;"
-                    "color:%1;")
-                    .arg(color));
+                    "color:%1;"
+                    ).arg(color)
+                );
 
-            auto *textLabel =
-                new QLabel(text);
+            auto *textLabel = new QLabel(text);
 
             textLabel->setStyleSheet(
-                "font-size:11px;"
-                "color:#8a8487;");
+                "color:#777984;"
+                );
 
-            layout->addWidget(valueLabel);
+            layout->addWidget(numberLabel);
             layout->addWidget(textLabel);
 
-            return panel;
+            return card;
         };
 
-    auto *counterLayout =
-        new QHBoxLayout;
+        auto *counterLayout = new QHBoxLayout;
 
-    counterLayout->addWidget(
-        createCounter(
-            QString::number(total),
-            "Total des incidents",
-            "#c80012"));
+        counterLayout->addWidget(
+            createCounter(
+                QString::number(total),
+                "Total des incidents",
+                "#5b1722"
+                )
+            );
 
-    counterLayout->addWidget(
-        createCounter(
-            QString::number(critiques),
-            "Critiques",
-            "#18a465"));
+        counterLayout->addWidget(
+            createCounter(
+                QString::number(critical),
+                "Critiques",
+                "#c1121f"
+                )
+            );
 
-    counterLayout->addWidget(
-        createCounter(
-            QString::number(enCours),
-            "En cours",
-            "#e57c00"));
+        counterLayout->addWidget(
+            createCounter(
+                QString::number(low),
+                "Faibles",
+                "#2e9d57"
+                )
+            );
 
-    counterLayout->addWidget(
-        createCounter(
-            QString::number(termines),
-            "Terminés",
-            "#7a7a7a"));
+        counterLayout->addWidget(
+            createCounter(
+                QString::number(active),
+                "En cours",
+                "#b51c2a"
+                )
+            );
 
-    pageLayout->addLayout(counterLayout);
+        counterLayout->addWidget(
+            createCounter(
+                QString::number(finished),
+                "Terminés",
+                "#74121e"
+                )
+            );
 
-    auto createCard =
-        [&](const QString &title,
-            const QString &hint) {
+        pageLayout->addLayout(counterLayout);
 
-            auto *panel = new QFrame;
-            panel->setObjectName(
-                "statisticsCard");
+        auto createChart = [](
+                               const QString &title
+                               ) {
+            auto *card = new QFrame;
+
+            card->setObjectName(
+                "statisticsCard"
+                );
 
             auto *layout =
-                new QVBoxLayout(panel);
+                new QVBoxLayout(card);
 
             layout->setContentsMargins(
-                17, 12, 17, 12);
+                18, 15, 18, 15
+                );
+
+            layout->setSpacing(8);
 
             auto *titleLabel =
                 new QLabel(title);
 
             titleLabel->setObjectName(
-                "statisticsCardTitle");
-
-            auto *hintLabel =
-                new QLabel(hint);
-
-            hintLabel->setStyleSheet(
-                "font-size:10px;"
-                "color:#8a8487;");
+                "statisticsCardTitle"
+                );
 
             layout->addWidget(titleLabel);
-            layout->addWidget(hintLabel);
 
-            return panel;
+            return card;
         };
 
-    auto makeBarChart =
-        [&](const QStringList &labels,
-            const std::vector<int> &values) {
-
-            QPixmap pixmap(520, 220);
-            pixmap.fill(Qt::transparent);
-
-            QPainter chartPainter(&pixmap);
-
-            chartPainter.setRenderHint(
-                QPainter::Antialiasing);
+        auto addBars = [](
+                           QFrame *card,
+                           const QMap<QString, int> &values
+                           ) {
+            auto *layout =
+                qobject_cast<QVBoxLayout *>(
+                    card->layout()
+                    );
 
             int maximum = 1;
 
-            for (int value : values) {
-                maximum =
-                    std::max(maximum, value);
-            }
-
-            const int section =
-                490 /
-                std::max(
-                    1,
-                    static_cast<int>(
-                        labels.size()));
-
-            for (int i = 0;
-                 i < labels.size();
-                 ++i) {
-
-                const int height =
-                    125 *
-                    values[i] /
-                    maximum;
-
-                const int x =
-                    15 +
-                    i * section +
-                    (section - 44) / 2;
-
-                const int bottom = 165;
-
-                chartPainter.setPen(Qt::NoPen);
-                chartPainter.setBrush(
-                    QColor("#c90012"));
-
-                if (height > 0) {
-                    chartPainter.drawRoundedRect(
-                        QRect(
-                            x,
-                            bottom - height,
-                            44,
-                            height),
-                        4,
-                        4);
-                }
-
-                chartPainter.setPen(
-                    QColor("#342f32"));
-
-                QFont valueFont(
-                    "Segoe UI",
-                    10);
-
-                valueFont.setBold(true);
-                chartPainter.setFont(valueFont);
-
-                chartPainter.drawText(
-                    QRect(
-                        x - 8,
-                        bottom - height - 25,
-                        60,
-                        20),
-                    Qt::AlignCenter,
-                    QString::number(values[i]));
-
-                chartPainter.setPen(
-                    QColor("#80787c"));
-
-                chartPainter.setFont(
-                    QFont("Segoe UI", 8));
-
-                chartPainter.drawText(
-                    QRect(
-                        i * section,
-                        177,
-                        section,
-                        35),
-                    Qt::AlignHCenter |
-                        Qt::TextWordWrap,
-                    labels[i]);
-            }
-
-            return pixmap;
-        };
-
-    auto makeSegments =
-        [&](const QStringList &labels,
-            const std::vector<int> &values,
-            const std::vector<QColor> &colors,
-            int width) {
-
-            QPixmap pixmap(width, 76);
-            pixmap.fill(Qt::transparent);
-
-            QPainter chartPainter(&pixmap);
-
-            chartPainter.setRenderHint(
-                QPainter::Antialiasing);
-
-            int sum = 0;
-
             for (int value : values)
-                sum += value;
+                maximum = std::max(
+                    maximum,
+                    value
+                    );
 
-            const int barWidth = width - 10;
+            int delay = 140;
 
-            chartPainter.setPen(Qt::NoPen);
-            chartPainter.setBrush(
-                QColor("#ece8e7"));
+            for (auto iterator = values.cbegin();
+                 iterator != values.cend();
+                 ++iterator) {
+                auto *rowLayout =
+                    new QHBoxLayout;
 
-            chartPainter.drawRoundedRect(
-                QRect(
-                    5,
-                    4,
-                    barWidth,
-                    16),
-                6,
-                6);
-
-            double x = 5;
-
-            for (int i = 0;
-                 i < static_cast<int>(
-                     values.size());
-                 ++i) {
-
-                const double segmentWidth =
-                    sum > 0
-                        ? double(barWidth) *
-                              values[i] /
-                              sum
-                        : 0;
-
-                chartPainter.setBrush(
-                    colors[
-                        i % colors.size()]);
-
-                chartPainter.drawRect(
-                    QRectF(
-                        x,
-                        4,
-                        segmentWidth,
-                        16));
-
-                x += segmentWidth;
-            }
-
-            int legendX = 5;
-            int legendY = 34;
-
-            chartPainter.setFont(
-                QFont("Segoe UI", 8));
-
-            for (int i = 0;
-                 i < labels.size();
-                 ++i) {
-
-                QString label = labels[i];
-
-                if (label.size() > 15) {
-                    label =
-                        label.left(13) + "...";
-                }
-
-                const QString legend =
+                auto *label = new QLabel(
                     QString("%1 (%2)")
-                        .arg(label)
-                        .arg(values[i]);
+                        .arg(iterator.key())
+                        .arg(iterator.value())
+                    );
 
-                const int itemWidth =
-                    std::max(
-                        90,
-                        int(
-                            legend.size() *
-                                7 +
-                            22));
+                label->setMinimumWidth(135);
 
-                if (legendX + itemWidth >
-                    width - 5) {
+                auto *bar = new QProgressBar;
 
-                    legendX = 5;
-                    legendY += 25;
+                bar->setRange(0, maximum);
+                bar->setValue(0);
+                bar->setTextVisible(false);
+
+                if (iterator.key() == "Faible") {
+                    label->setStyleSheet(
+                        "color:#176d37;"
+                        "font-weight:700;"
+                        );
+
+                    bar->setStyleSheet(
+                        "QProgressBar {"
+                        "background:#dff3e5;"
+                        "border:none;"
+                        "border-radius:7px;"
+                        "min-height:14px;"
+                        "}"
+                        "QProgressBar::chunk {"
+                        "background:#2e9d57;"
+                        "border-radius:7px;"
+                        "}"
+                        );
                 }
 
-                chartPainter.setBrush(
-                    colors[
-                        i % colors.size()]);
+                rowLayout->addWidget(label);
+                rowLayout->addWidget(bar, 1);
 
-                chartPainter.drawEllipse(
-                    QRect(
-                        legendX,
-                        legendY + 4,
-                        8,
-                        8));
+                layout->addLayout(rowLayout);
 
-                chartPainter.setPen(
-                    QColor("#5f595c"));
+                int finalValue =
+                    iterator.value();
 
-                chartPainter.drawText(
-                    QRect(
-                        legendX + 13,
-                        legendY,
-                        itemWidth - 13,
-                        19),
-                    Qt::AlignLeft |
-                        Qt::AlignVCenter,
-                    legend);
+                QTimer::singleShot(
+                    delay,
+                    bar,
+                    [bar, finalValue] {
+                        auto *animation =
+                            new QPropertyAnimation(
+                                bar,
+                                "value",
+                                bar
+                                );
 
-                legendX += itemWidth;
+                        animation->setDuration(650);
+                        animation->setStartValue(0);
+                        animation->setEndValue(
+                            finalValue
+                            );
+
+                        animation->setEasingCurve(
+                            QEasingCurve::OutCubic
+                            );
+
+                        animation->start(
+                            QAbstractAnimation::
+                            DeleteWhenStopped
+                            );
+                    });
+
+                delay += 90;
             }
-
-            return pixmap;
         };
 
-    auto *middle = new QHBoxLayout;
+        auto *topCharts = new QHBoxLayout;
 
-    auto *typeCard =
-        createCard(
-            "Nombre d’incidents par type",
-            "Répartition sur l’ensemble des incidents");
+        auto *typeChart =
+            createChart("Incidents par type");
 
-    typeCard->setMinimumHeight(280);
+        auto *gravityChart =
+            createChart("Incidents par gravité");
 
-    auto *typeLayout =
-        qobject_cast<QVBoxLayout *>(
-            typeCard->layout());
+        addBars(typeChart, byType);
+        addBars(gravityChart, byGravity);
 
-    auto *typeChart = new QLabel;
+        topCharts->addWidget(typeChart, 1);
+        topCharts->addWidget(gravityChart, 1);
 
-    typeChart->setPixmap(
-        makeBarChart(
-            types,
-            parType));
+        pageLayout->addLayout(topCharts);
 
-    typeChart->setAlignment(
-        Qt::AlignCenter);
+        auto *bottomCharts =
+            new QHBoxLayout;
 
-    typeLayout->addWidget(typeChart, 1);
-    middle->addWidget(typeCard, 1);
+        auto *zoneChart =
+            createChart("Incidents par zone");
 
-    auto *rightCharts =
-        new QVBoxLayout;
+        auto *statusChart =
+            createChart("Incidents par statut");
 
-    auto *gravityCard =
-        createCard(
-            "Répartition par niveau de gravité",
-            "Sur l’ensemble des incidents");
+        addBars(zoneChart, byZone);
+        addBars(statusChart, byStatus);
 
-    auto *gravityLayout =
-        qobject_cast<QVBoxLayout *>(
-            gravityCard->layout());
+        bottomCharts->addWidget(zoneChart, 1);
+        bottomCharts->addWidget(statusChart, 1);
 
-    auto *gravityChart = new QLabel;
+        pageLayout->addLayout(bottomCharts);
+        pageLayout->addStretch();
 
-    gravityChart->setPixmap(
-        makeSegments(
-            gravites,
-            parGravite,
-            {
-                QColor("#c90012"),
-                QColor("#ef676f"),
-                QColor("#f4a0a5"),
-                QColor("#f8c9cc")
-            },
-            480));
+        scrollArea->setWidget(statisticsPage);
+        rootLayout->addWidget(scrollArea, 1);
 
-    gravityChart->setAlignment(
-        Qt::AlignCenter);
+        connect(
+            backButton,
+            &QPushButton::clicked,
+            &dialog,
+            &QDialog::accept
+            );
 
-    gravityLayout->addWidget(
-        gravityChart);
+        connect(
+            exportButton,
+            &QPushButton::clicked,
+            &dialog,
+            [&dialog, statisticsPage] {
+                QString path =
+                    QFileDialog::getSaveFileName(
+                        &dialog,
+                        "Enregistrer les statistiques",
+                        "statistiques_incidents.pdf",
+                        "PDF (*.pdf)"
+                        );
 
-    rightCharts->addWidget(
-        gravityCard);
+                if (path.isEmpty())
+                    return;
 
-    QStringList zonesAffichees;
-    std::vector<int> nombresZones;
+                if (!path.endsWith(
+                        ".pdf",
+                        Qt::CaseInsensitive)) {
+                    path += ".pdf";
+                }
 
-    int autresZones = 0;
+                QPdfWriter pdf(path);
 
-    for (int i = 0;
-         i < static_cast<int>(
-             nomsZones.size());
-         ++i) {
+                pdf.setPageSize(
+                    QPageSize(QPageSize::A4)
+                    );
 
-        if (i < 4) {
-            zonesAffichees
-                << nomsZones[i];
+                pdf.setPageOrientation(
+                    QPageLayout::Landscape
+                    );
 
-            nombresZones.push_back(
-                parZone[i]);
-        } else {
-            autresZones +=
-                parZone[i];
-        }
-    }
+                pdf.setResolution(150);
 
-    if (autresZones > 0) {
-        zonesAffichees << "Autres";
-        nombresZones.push_back(
-            autresZones);
-    }
+                QPainter painter(&pdf);
 
-    auto *zoneCard =
-        createCard(
-            "Répartition par zone",
-            "Sur l’ensemble des incidents");
+                if (!painter.isActive()) {
+                    QMessageBox::warning(
+                        &dialog,
+                        "Export PDF",
+                        "Impossible de créer le PDF."
+                        );
 
-    auto *zoneLayout =
-        qobject_cast<QVBoxLayout *>(
-            zoneCard->layout());
+                    return;
+                }
 
-    auto *zoneChart = new QLabel;
+                QPixmap capture =
+                    statisticsPage->grab();
 
-    zoneChart->setPixmap(
-        makeSegments(
-            zonesAffichees,
-            nombresZones,
-            {
-                QColor("#2671c9"),
-                QColor("#5799df"),
-                QColor("#88b6e8"),
-                QColor("#b7d2ef"),
-                QColor("#d6e5f5")
-            },
-            480));
+                QSize size = capture.size();
 
-    zoneChart->setAlignment(
-        Qt::AlignCenter);
+                size.scale(
+                    pdf.width(),
+                    pdf.height(),
+                    Qt::KeepAspectRatio
+                    );
 
-    zoneLayout->addWidget(zoneChart);
-    rightCharts->addWidget(zoneCard);
+                painter.drawPixmap(
+                    QRect(
+                        (pdf.width()
+                         - size.width()) / 2,
+                        (pdf.height()
+                         - size.height()) / 2,
+                        size.width(),
+                        size.height()
+                        ),
+                    capture
+                    );
 
-    middle->addLayout(rightCharts, 1);
-    pageLayout->addLayout(middle);
+                painter.end();
 
-    auto *statusCard =
-        createCard(
-            "Répartition selon le statut",
-            "État actuel des incidents");
-
-    auto *statusLayout =
-        qobject_cast<QVBoxLayout *>(
-            statusCard->layout());
-
-    auto *statusChart = new QLabel;
-
-    statusChart->setPixmap(
-        makeSegments(
-            statuts,
-            parStatut,
-            {
-                QColor("#20a666"),
-                QColor("#e77c00"),
-                QColor("#929292")
-            },
-            1010));
-
-    statusChart->setAlignment(
-        Qt::AlignCenter);
-
-    statusLayout->addWidget(statusChart);
-    pageLayout->addWidget(statusCard);
-    pageLayout->addStretch();
-
-    scroll->setWidget(page);
-    root->addWidget(scroll, 1);
-
-    connect(
-        returnButton,
-        &QPushButton::clicked,
-        &dialog,
-        &QDialog::accept);
-
-    connect(
-        pdfButton,
-        &QPushButton::clicked,
-        &dialog,
-        [&dialog] {
-            QString path =
-                QFileDialog::getSaveFileName(
-                    &dialog,
-                    "Enregistrer les statistiques",
-                    "statistiques_incidents.pdf",
-                    "PDF (*.pdf)");
-
-            if (path.isEmpty())
-                return;
-
-            if (!path.endsWith(
-                    ".pdf",
-                    Qt::CaseInsensitive)) {
-                path += ".pdf";
-            }
-
-            QPdfWriter pdf(path);
-
-            pdf.setPageSize(
-                QPageSize(
-                    QPageSize::A4));
-
-            pdf.setPageOrientation(
-                QPageLayout::Landscape);
-
-            pdf.setResolution(150);
-
-            QPainter pdfPainter(&pdf);
-
-            if (!pdfPainter.isActive()) {
-                QMessageBox::warning(
+                QMessageBox::information(
                     &dialog,
                     "Export PDF",
-                    "Impossible de créer le fichier PDF.");
+                    "Les statistiques ont été enregistrées."
+                    );
+            });
 
-                return;
+        dialog.setWindowOpacity(0.0);
+
+        QTimer::singleShot(
+            30,
+            &dialog,
+            [&dialog] {
+                auto *animation =
+                    new QPropertyAnimation(
+                        &dialog,
+                        "windowOpacity",
+                        &dialog
+                        );
+
+                animation->setDuration(420);
+                animation->setStartValue(0.0);
+                animation->setEndValue(1.0);
+
+                animation->setEasingCurve(
+                    QEasingCurve::OutCubic
+                    );
+
+                animation->start(
+                    QAbstractAnimation::
+                    DeleteWhenStopped
+                    );
+            });
+
+        animateEntrance(
+            statisticsSidebar,
+            60,
+            QPoint(-40, 0)
+            );
+
+        animateEntrance(
+            statisticsPage,
+            130,
+            QPoint(35, 0)
+            );
+
+        dialog.exec();
+    }
+
+    void exportIncidentsPdf()
+    {
+        QString path =
+            QFileDialog::getSaveFileName(
+                this,
+                "Enregistrer la liste des incidents",
+                "incidents.pdf",
+                "PDF (*.pdf)"
+                );
+
+        if (path.isEmpty())
+            return;
+
+        if (!path.endsWith(
+                ".pdf",
+                Qt::CaseInsensitive)) {
+            path += ".pdf";
+        }
+
+        QString html =
+            "<h1 style='color:#b51c2a'>"
+            "SMART FIRE STATION"
+            "</h1>"
+            "<h2>Liste des incidents</h2>"
+            "<table width='100%' "
+            "border='1' cellspacing='0' "
+            "cellpadding='6'>"
+            "<tr style='background:#5b1722;"
+            "color:white'>"
+            "<th>ID</th>"
+            "<th>Type</th>"
+            "<th>Date</th>"
+            "<th>Adresse</th>"
+            "<th>Gravité</th>"
+            "<th>Victimes</th>"
+            "<th>Statut</th>"
+            "<th>Priorité</th>"
+            "</tr>";
+
+        for (const Incident &incident : incidents) {
+            if (incident.archived)
+                continue;
+
+            QString color =
+                incident.gravity == "Faible"
+                    ? "#d7f4df"
+                    : "white";
+
+            html += QString(
+                        "<tr style='background:%1'>"
+                        ).arg(color);
+
+            QStringList values = {
+                incidentNumber(incident.id),
+                incident.type,
+                incident.date.toString(
+                    "dd/MM/yyyy HH:mm"
+                    ),
+                incident.address,
+                incident.gravity,
+                QString::number(
+                    incident.victims
+                    ),
+                incident.status,
+                calculatePriority(incident)
+            };
+
+            for (const QString &value : values) {
+                html +=
+                    "<td>"
+                    + value.toHtmlEscaped()
+                    + "</td>";
             }
 
-            QPixmap capture =
-                dialog.grab();
+            html += "</tr>";
+        }
 
-            QSize size =
-                capture.size();
+        html += "</table>";
 
-            size.scale(
-                pdf.width(),
-                pdf.height(),
-                Qt::KeepAspectRatio);
+        QPdfWriter pdf(path);
 
-            pdfPainter.drawPixmap(
-                QRect(
-                    (pdf.width() -
-                     size.width()) / 2,
+        pdf.setPageSize(
+            QPageSize(QPageSize::A4)
+            );
 
-                    (pdf.height() -
-                     size.height()) / 2,
+        pdf.setPageOrientation(
+            QPageLayout::Landscape
+            );
 
-                    size.width(),
-                    size.height()),
-                capture);
+        pdf.setPageMargins(
+            QMarginsF(12, 12, 12, 12)
+            );
 
-            pdfPainter.end();
+        QTextDocument document;
 
-            QMessageBox::information(
-                &dialog,
-                "Export PDF",
-                "Les statistiques ont été enregistrées.");
-        });
+        document.setHtml(html);
+        document.print(&pdf);
 
-    dialog.exec();
-}
-
-void exportPdf()
-{
-    QString path =
-        QFileDialog::getSaveFileName(
-            this,
-            "Enregistrer la liste des incidents",
-            "incidents.pdf",
-            "PDF (*.pdf)");
-
-    if (path.isEmpty())
-        return;
-
-    if (!path.endsWith(
-            ".pdf",
-            Qt::CaseInsensitive)) {
-        path += ".pdf";
-    }
-
-    QFile file(path);
-
-    if (!file.open(QIODevice::WriteOnly)) {
-        QMessageBox::warning(
+        QMessageBox::information(
             this,
             "Export PDF",
-            "Impossible de créer le fichier PDF.");
-
-        return;
+            "PDF enregistré :\n" + path
+            );
     }
-
-    QString html =
-        "<h1 style='color:#b51c2a'>"
-        "SMART FIRE STATION"
-        "</h1>"
-        "<h2>Liste des incidents</h2>"
-        "<table width='100%' "
-        "border='1' "
-        "cellspacing='0' "
-        "cellpadding='6'>"
-        "<tr style='"
-        "background:#5b1722;"
-        "color:white'>"
-        "<th>ID</th>"
-        "<th>Type</th>"
-        "<th>Date</th>"
-        "<th>Adresse</th>"
-        "<th>Gravité</th>"
-        "<th>Victimes</th>"
-        "<th>Statut</th>"
-        "<th>Priorité</th>"
-        "</tr>";
-
-    for (const auto &incident : incidents) {
-        if (incident.archived)
-            continue;
-
-        const QStringList values = {
-            QString("INC-%1")
-        .arg(
-            incident.id,
-            3,
-            10,
-            QChar('0')),
-
-            incident.type,
-
-            incident.date.toString(
-                "dd/MM/yyyy HH:mm"),
-
-            incident.address,
-            incident.gravity,
-            QString::number(incident.victims),
-            incident.status,
-            priority(incident)
-    };
-
-    html += "<tr>";
-
-    for (const QString &value : values) {
-        html +=
-            "<td>" +
-            value.toHtmlEscaped() +
-            "</td>";
-    }
-
-    html += "</tr>";
-}
-
-html += "</table>";
-
-{
-    QPdfWriter pdf(&file);
-
-    pdf.setPageSize(
-        QPageSize(
-            QPageSize::A4));
-
-    pdf.setPageOrientation(
-        QPageLayout::Landscape);
-
-    pdf.setPageMargins(
-        QMarginsF(
-            12,
-            12,
-            12,
-            12));
-
-    QTextDocument document;
-    document.setHtml(html);
-    document.print(&pdf);
-}
-
-file.close();
-
-QMessageBox::information(
-    this,
-    "Export PDF",
-    "PDF enregistré :\n" + path);
-}
 };
 
 int main(int argc, char *argv[])
 {
-    QApplication app(argc, argv);
+    QApplication application(argc, argv);
 
-    app.setStyle("Fusion");
-    app.setFont(
-        QFont("Segoe UI", 10));
+    application.setStyle("Fusion");
+    application.setFont(
+        QFont("Segoe UI", 10)
+        );
 
     MainWindow window;
     window.show();
 
-    return app.exec();
+    return application.exec();
 }
