@@ -6,6 +6,7 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     app.setStyle("Fusion");
+    app.setWindowIcon(QIcon(":/logo_USPC.png"));
 
     // Palette claire forcée (ignore le mode sombre de Windows)
     QPalette p;
@@ -25,6 +26,7 @@ int main(int argc, char *argv[])
 
     FireStation w;
     w.resize(1280, 820);
-    w.show();
+    w.show();          // l'interface s'ouvre directement
+
     return app.exec();
 }

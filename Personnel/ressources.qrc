@@ -1,5 +1,7 @@
 <RCC>
     <qresource prefix="/">
-        <file>logo.png</file>
+        <file>logo_USPC.png</file>
+        <file>logo_USPC_anime.gif</file>
+        <file>logo_USPC_boucle.gif</file>
     </qresource>
 </RCC>

@@ -3,57 +3,166 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QDateEdit>
+#include <QDateTime>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFontMetrics>
 #include <QFrame>
+#include <QGraphicsOpacityEffect>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLinearGradient>
+#include <QListWidget>
 #include <QMessageBox>
+#include <QMovie>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QPageLayout>
 #include <QPageSize>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPdfWriter>
+#include <QPropertyAnimation>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
 #include <QStackedWidget>
+#include <QStatusBar>
 #include <QTableWidget>
 #include <QTextDocument>
+#include <QTimer>
 #include <QToolButton>
+#include <QUrl>
 #include <QVBoxLayout>
+#include <QVariantAnimation>
 #include <algorithm>
 
 namespace {
 
-// Valeurs par défaut affectées automatiquement à chaque nouvel agent
-const QString DEF_RH   = "Mansouri Leila";
-const QString DEF_CHEF = "Trabelsi Sami";
+// ----------------------------------------------------------------------------
+//  Paramètres généraux
+// ----------------------------------------------------------------------------
+const QString UNITE    = "Unité Spéciale de la Protection Civile (USPC)";
 
-// Seuils des alertes (à adapter)
-const int ALERTE_JOURS   = 30;  // alerte certification : X jours avant l'échéance
-const int MAX_INTERV_48H = 5;   // surcharge : nombre d'interventions en 48 h
-const int MIN_REPOS_H    = 11;  // repos réglementaire minimal (heures)
+// Acteurs de l'application (utilisateurs, pas des attributs de l'agent)
+const QString ACTEUR_RH   = "Mansouri Leila";   // Responsable RH
+const QString ACTEUR_CHEF = "Trabelsi Sami";    // Chef de caserne
+
+const int ALERTE_JOURS        = 30;  // SMS + alerte : X jours avant l'échéance
+const int RENOUVELLEMENT_JOURS = 90; // une formation est proposée X jours avant l'échéance
+
+// ----------------------------------------------------------------------------
+//  Configuration SMS (Innovation 1)
+//  Laisser SMS_ACCOUNT_SID vide = mode SIMULATION (les SMS sont seulement
+//  enregistrés dans le journal). Pour envoyer de vrais SMS, créer un compte
+//  Twilio (ou un fournisseur tunisien équivalent) et remplir ces 3 valeurs.
+// ----------------------------------------------------------------------------
+const QString SMS_ACCOUNT_SID = "";
+const QString SMS_AUTH_TOKEN  = "";
+const QString SMS_EXPEDITEUR  = "";   // numéro fourni par le fournisseur, ex. "+1415..."
+
+// ----------------------------------------------------------------------------
+//  Listes de valeurs adaptées à l'USPC
+// ----------------------------------------------------------------------------
+const QStringList POSTES = {"Pompier", "Chauffeur", "Maître-chien", "Secouriste",
+                            "Mécanicien", "Administratif", "Responsable RH", "Chef de caserne"};
+const QStringList POSTES_OPERATIONNELS = {"Pompier", "Chauffeur", "Maître-chien",
+                                          "Secouriste", "Chef de caserne"};
+const QStringList GRADES = {"Agent", "Caporal", "Sergent", "Adjudant", "Lieutenant", "Capitaine"};
+const QStringList SPECIALITES = {"Sauvetage-déblaiement", "Recherche cynophile",
+                                 "Risques chimiques (NRBC)", "Secourisme",
+                                 "Lutte contre l'incendie"};
+const QStringList DISPOS = {"Disponible", "En intervention", "En formation", "En repos", "En congé"};
+
+// Noms des certifications (identiques dans les fiches agents et le catalogue)
+const QString C_PSE1  = "PSE1 — Premiers secours";
+const QString C_PSE2  = "PSE2 — Secours en équipe";
+const QString C_SD1   = "Sauvetage-déblaiement (SD1)";
+const QString C_SD2   = "Sauvetage-déblaiement (SD2)";
+const QString C_CYNO  = "Recherche cynophile";
+const QString C_NRBC  = "Risques chimiques (NRBC)";
+const QString C_COND  = "Conduite d'engins d'intervention";
+const QString C_MAINT = "Maintenance des véhicules d'intervention";
+const QString C_FDF   = "Lutte contre l'incendie (FDF)";
+const QString C_GOC   = "Gestion opérationnelle et commandement (GOC)";
+
+bool estOperationnel(const QString &poste) { return POSTES_OPERATIONNELS.contains(poste); }
+bool aUnGrade(const QString &poste)        { return poste != "Administratif"; }
 
 int ordreDispo(const QString &d)
 {
-    if (d == "Disponible") return 0;
-    if (d == "En service") return 1;
-    return 2;
+    const int i = int(DISPOS.indexOf(d));
+    return i < 0 ? 99 : i;
 }
 
-// Un segment d'une barre de répartition
+QColor couleurDispo(const QString &d)
+{
+    if (d == "Disponible")      return QColor("#1e8e5a");
+    if (d == "En intervention") return QColor("#c46a00");
+    if (d == "En formation")    return QColor("#2f6fb3");
+    if (d == "En repos")        return QColor("#8a8a8a");
+    return QColor("#b5b5b5");   // En congé
+}
+
+QColor fondDispo(const QString &d)
+{
+    if (d == "Disponible")      return QColor("#dff3e5");
+    if (d == "En intervention") return QColor("#fdebd0");
+    if (d == "En formation")    return QColor("#e3eefa");
+    return QColor("#eeeeee");
+}
+
+// ----------------------------------------------------------------------------
+//  Animations
+// ----------------------------------------------------------------------------
+// Apparition en fondu d'un widget (avec un délai optionnel pour les effets en cascade)
+void fondu(QWidget *w, int ms = 400, int delai = 0)
+{
+    auto *eff = new QGraphicsOpacityEffect(w);
+    eff->setOpacity(0.0);
+    w->setGraphicsEffect(eff);
+    auto *anim = new QPropertyAnimation(eff, "opacity", w);
+    anim->setDuration(ms);
+    anim->setStartValue(0.0);
+    anim->setEndValue(1.0);
+    anim->setEasingCurve(QEasingCurve::OutCubic);
+    // l'effet est retiré à la fin pour garder un rendu net
+    QObject::connect(anim, &QPropertyAnimation::finished, w, [w, eff] {
+        if (w->graphicsEffect() == eff) w->setGraphicsEffect(nullptr);
+    });
+    QTimer::singleShot(delai, anim, [anim] { anim->start(QAbstractAnimation::DeleteWhenStopped); });
+}
+
+// Animation de progression 0 → 1 (barres qui « poussent »)
+void animerProgression(QWidget *w, double *prog, int ms, int delai = 0)
+{
+    auto *a = new QVariantAnimation(w);
+    a->setStartValue(0.0);
+    a->setEndValue(1.0);
+    a->setDuration(ms);
+    a->setEasingCurve(QEasingCurve::OutCubic);
+    QObject::connect(a, &QVariantAnimation::valueChanged, w, [w, prog](const QVariant &v) {
+        *prog = v.toDouble();
+        w->update();
+    });
+    QTimer::singleShot(delai, a, [a] { a->start(QAbstractAnimation::DeleteWhenStopped); });
+}
+
+// ----------------------------------------------------------------------------
+//  Graphiques
+// ----------------------------------------------------------------------------
 struct Seg {
     QString label;
     int     n;
     QColor  color;
 };
 
-// Graphique en barres verticales (charge de travail par agent)
+// Graphique en barres verticales (charge de travail par agent), animé
 class BarChart : public QWidget
 {
 public:
@@ -62,6 +171,7 @@ public:
     {
         setMinimumHeight(250);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+        animerProgression(this, &m_prog, 900, 250);
     }
 
 protected:
@@ -85,13 +195,12 @@ protected:
 
         for (int i = 0; i < n; ++i) {
             const Agent &a = m_agents[i];
-            const int h = std::max(2, hMax * a.mois / max);
+            const int h = std::max(2, int(hMax * a.mois / max * m_prog));
             const int x = int(slot * i + (slot - barW) / 2.0);
-            const bool hot = a.interv48 >= MAX_INTERV_48H;
 
             QLinearGradient g(0, baseY - h, 0, baseY);
-            g.setColorAt(0, hot ? QColor("#f5b041") : QColor("#d10000"));
-            g.setColorAt(1, hot ? QColor("#c77d00") : QColor("#7a0000"));
+            g.setColorAt(0, QColor("#d10000"));
+            g.setColorAt(1, QColor("#7a0000"));
             p.setPen(Qt::NoPen);
             p.setBrush(g);
             p.drawRoundedRect(QRect(x, baseY - h, barW, h), 3, 3);
@@ -100,7 +209,7 @@ protected:
             p.setFont(bf);
             p.setPen(QColor("#222222"));
             p.drawText(QRect(int(slot * i), baseY - h - 20, int(slot), 18),
-                       Qt::AlignCenter, QString::number(a.mois));
+                       Qt::AlignCenter, QString::number(qRound(a.mois * m_prog)));
 
             QFont sf = base; sf.setPointSizeF(std::max(7.0, ps - 1.5));
             p.setFont(sf);
@@ -115,9 +224,10 @@ protected:
 
 private:
     QList<Agent> m_agents;
+    double m_prog = 0.0;
 };
 
-// Barre horizontale segmentée (répartitions)
+// Barre horizontale segmentée (répartitions), animée
 class StackBar : public QWidget
 {
 public:
@@ -126,6 +236,7 @@ public:
     {
         setFixedHeight(26);
         setMinimumWidth(100);
+        animerProgression(this, &m_prog, 800, 300);
     }
 
 protected:
@@ -136,12 +247,14 @@ protected:
         QPainterPath path;
         path.addRoundedRect(QRectF(rect()), 6, 6);
         p.setClipPath(path);
+        p.fillRect(rect(), QColor("#f1efec"));
         int total = 0;
         for (const Seg &s : m_segs) total += s.n;
-        if (total <= 0) { p.fillRect(rect(), QColor("#eeeeee")); return; }
+        if (total <= 0) return;
+        const double W = width() * m_prog;
         double x = 0;
         for (const Seg &s : m_segs) {
-            const double w = width() * double(s.n) / total;
+            const double w = W * double(s.n) / total;
             p.fillRect(QRectF(x, 0, w + 1, height()), s.color);
             x += w;
         }
@@ -149,6 +262,7 @@ protected:
 
 private:
     QList<Seg> m_segs;
+    double m_prog = 0.0;
 };
 
 QFrame *nouvelleCarte(QVBoxLayout **out)
@@ -169,14 +283,24 @@ QLabel *etiquette(const QString &txt, const QString &objName)
     return l;
 }
 
-QFrame *carteKpi(const QString &n, const QString &txt, const QString &couleur)
+// Carte de chiffre clé avec compteur animé
+QFrame *carteKpi(int n, const QString &txt, const QString &couleur, int delai = 0)
 {
     QVBoxLayout *l = nullptr;
     QFrame *f = nouvelleCarte(&l);
-    auto *num = new QLabel(n);
+    auto *num = new QLabel("0");
     num->setStyleSheet(QString("font-size:26px;font-weight:bold;color:%1;").arg(couleur));
     l->addWidget(num);
     l->addWidget(etiquette(txt, "sous"));
+
+    auto *a = new QVariantAnimation(num);
+    a->setStartValue(0);
+    a->setEndValue(n);
+    a->setDuration(700);
+    a->setEasingCurve(QEasingCurve::OutCubic);
+    QObject::connect(a, &QVariantAnimation::valueChanged, num,
+                     [num](const QVariant &v) { num->setText(QString::number(v.toInt())); });
+    QTimer::singleShot(delai, a, [a] { a->start(QAbstractAnimation::DeleteWhenStopped); });
     return f;
 }
 
@@ -206,6 +330,18 @@ void ajouterDistribution(QVBoxLayout *l, const QString &titre, const QString &so
     l->addWidget(lg);
 }
 
+// En-tête commun des pages secondaires (fil d'Ariane + titre + sous-titre)
+QVBoxLayout *enTetePage(const QString &page, const QString &titre, const QString &sous)
+{
+    auto *left = new QVBoxLayout;
+    left->setSpacing(2);
+    left->addWidget(new QLabel(QString("<span style='color:#777'>Personnel&nbsp;&nbsp;›&nbsp;&nbsp;</span>"
+                                       "<b style='color:#b3211c'>%1</b>").arg(page)));
+    left->addWidget(etiquette(titre, "titre"));
+    left->addWidget(etiquette(sous, "sous"));
+    return left;
+}
+
 const char *STYLE = R"(
 QWidget { color: #222; }
 QComboBox QAbstractItemView { background: white; color: #222;
@@ -216,8 +352,11 @@ QMainWindow, #main { background: #f4f2ef; }
 #statsRoot { background: #f4f2ef; }
 #sidebar { background: #b3211c; }
 #sidebar QPushButton { color: white; background: transparent; border: none;
-    text-align: left; padding: 10px 22px; font-size: 14px; }
-#sidebar QPushButton:checked { background: rgba(255,255,255,0.22); font-weight: bold; }
+    text-align: left; padding: 10px 22px; font-size: 14px; border-left: 4px solid transparent; }
+#sidebar QPushButton:hover { background: rgba(255,255,255,0.12); }
+#sidebar QPushButton:checked { background: rgba(255,255,255,0.22); font-weight: bold;
+    border-left: 4px solid #f2a10c; }
+#sidebar QLabel#acteur { color: rgba(255,255,255,0.85); font-size: 12px; padding: 0 22px; }
 #logo { background: white; border-radius: 75px; }
 #titre { font-size: 26px; font-weight: bold; color: #222; }
 #sous { color: #777; }
@@ -227,25 +366,40 @@ QMainWindow, #main { background: #f4f2ef; }
 QLabel[champ="true"] { color: #777; font-size: 12px; }
 QLineEdit, QComboBox, QDateEdit { background: #faf9f7; border: 1px solid #e4e0da;
     border-radius: 6px; padding: 6px 8px; min-height: 20px; }
+QLineEdit:focus, QComboBox:focus, QDateEdit:focus { border: 1px solid #f2a10c; background: white; }
 QComboBox:disabled { color: #aaa; }
 #certRow { background: #faf9f7; border: 1px solid #e4e0da; border-radius: 8px; }
 #certRow QLabel { background: transparent; }
 #certRow QLineEdit, #certRow QDateEdit { background: white; }
 QPushButton { background: white; border: 1px solid #e4e0da; border-radius: 6px; padding: 8px 14px; }
+QPushButton:hover { background: #fbf7f1; border: 1px solid #f2a10c; }
+QPushButton:pressed { background: #f3ece2; }
 QPushButton:disabled { color: #aaa; }
 QPushButton#orange { background: #f2a10c; border: none; font-weight: bold; color: #222; }
+QPushButton#orange:hover { background: #ffb52e; }
+QPushButton#orange:pressed { background: #d98e00; }
 QPushButton#rouge  { background: #b3211c; border: none; font-weight: bold; color: white; }
+QPushButton#rouge:hover { background: #d02a24; }
 QPushButton#rouge:disabled { background: #d9a09d; }
 QPushButton#retour { color: #b3211c; font-weight: bold; border: 1px solid #e8b4b1; }
+QPushButton#retour:hover { background: #fbe4e2; }
 QToolButton { background: white; border: 1px solid #e4e0da; border-radius: 6px; padding: 4px 8px; }
+QToolButton:hover { background: #fdf3e1; border: 1px solid #f2a10c; }
 QTableWidget { background: white; border: none; gridline-color: transparent; }
+QTableWidget::item:hover { background: #fdf6ea; }
+QTableWidget::item:selected { background: #fde9c4; color: #222; }
 QHeaderView::section { background: white; border: none; border-bottom: 1px solid #e4e0da;
     color: #777; font-weight: bold; padding: 6px; }
 #alerte { background: #fbe4e2; border-radius: 8px; }
 #alerteInfo { background: #e3eefa; border-radius: 8px; }
 #alerte QLabel, #alerteInfo QLabel { background: transparent; }
-#pastille { background: #b3211c; color: white; border-radius: 5px; font-weight: bold; }
+#alerte QLabel#pastille { background: #b3211c; color: white; border-radius: 12px; font-weight: bold; }
+#alerteInfo QLabel#pastilleInfo { background: #2f6fb3; color: white; border-radius: 12px; font-weight: bold; }
 #erreur { color: #b3211c; font-size: 12px; }
+#badgeUrgent { background: #fbe4e2; color: #b3211c; border-radius: 6px; padding: 2px 8px; font-weight: bold; }
+#badgeNormal { background: #fdebd0; color: #a86200; border-radius: 6px; padding: 2px 8px; font-weight: bold; }
+#badgeOk { background: #dff3e5; color: #1e7a3c; border-radius: 6px; padding: 2px 8px; font-weight: bold; }
+QStatusBar { background: white; color: #555; border-top: 1px solid #e4e0da; }
 )";
 
 } // namespace
@@ -255,9 +409,12 @@ QHeaderView::section { background: white; border: none; border-bottom: 1px solid
 // ============================================================================
 FireStation::FireStation(QWidget *parent) : QMainWindow(parent)
 {
-    setWindowTitle("Smart Fire Station — Gestion du personnel");
+    setWindowTitle("USPC — Gestion du personnel");
+    setWindowIcon(QIcon(":/logo_USPC.png"));
     setStyleSheet(STYLE);
+    m_net = new QNetworkAccessManager(this);
     chargerDonnees();
+    chargerSessions();
 
     auto *central = new QWidget;
     central->setObjectName("main");
@@ -275,19 +432,23 @@ FireStation::FireStation(QWidget *parent) : QMainWindow(parent)
     content->setSpacing(10);
 
     content->addWidget(etiquette("Gestion du personnel", "titre"));
-    content->addWidget(etiquette("Module 5 — Gestion du personnel et fonctionnalités innovantes", "sous"));
 
     auto *bar = new QHBoxLayout;
     bar->addWidget(new QLabel("Trier par :"));
     cbTri = new QComboBox;
     cbTri->addItems({"Disponibilité", "Nom", "Grade"});
     bar->addWidget(cbTri);
-    auto *btnPdf = new QPushButton("↓ Exporter le planning de garde (PDF)");
+    auto *btnPdf = new QPushButton("↓ Planning de garde (PDF)");
     btnPdf->setObjectName("orange");
-    auto *btnStats = new QPushButton("Statistiques (charge de travail)");
+    auto *btnStats = new QPushButton("Statistiques");
     btnStats->setObjectName("orange");
-    bar->addWidget(btnPdf);
-    bar->addWidget(btnStats);
+    auto *btnForm = new QPushButton("Formations recommandées");
+    btnForm->setObjectName("orange");
+    auto *btnSms = new QPushButton("Journal SMS");
+    for (QPushButton *b : {btnPdf, btnStats, btnForm, btnSms}) {
+        b->setCursor(Qt::PointingHandCursor);
+        bar->addWidget(b);
+    }
     bar->addStretch();
     content->addLayout(bar);
 
@@ -304,15 +465,27 @@ FireStation::FireStation(QWidget *parent) : QMainWindow(parent)
     statsScroll->setFrameShape(QFrame::NoFrame);
     pages->addWidget(statsScroll);
 
+    // Page 2 : formations recommandées (reconstruite à chaque ouverture)
+    formScroll = new QScrollArea;
+    formScroll->setWidgetResizable(true);
+    formScroll->setFrameShape(QFrame::NoFrame);
+    pages->addWidget(formScroll);
+
     root->addWidget(pages, 1);
     setCentralWidget(central);
+    statusBar()->showMessage(SMS_ACCOUNT_SID.isEmpty()
+                                 ? "SMS : mode simulation (voir le Journal SMS)"
+                                 : "SMS : envoi réel activé");
 
     connect(btnPdf,   &QPushButton::clicked, this, &FireStation::exporterPdf);
     connect(btnStats, &QPushButton::clicked, this, &FireStation::afficherStats);
-    connect(navPersonnel, &QPushButton::clicked, this, [this] { pages->setCurrentIndex(0); });
+    connect(btnForm,  &QPushButton::clicked, this, &FireStation::afficherFormations);
+    connect(btnSms,   &QPushButton::clicked, this, &FireStation::afficherJournalSms);
+    connect(navPersonnel, &QPushButton::clicked, this, [this] { allerPage(0); });
     connect(cbTri, &QComboBox::currentTextChanged, this, [this] { rafraichir(); });
 
     reinitialiser();
+    verifierEcheancesSms();     // Innovation 1 : SMS automatiques au démarrage
     rafraichir();
 }
 
@@ -325,11 +498,15 @@ QWidget *FireStation::creerSidebar()
     l->setContentsMargins(0, 18, 0, 18);
     l->setSpacing(0);
 
+    // Logo animé (flamme + gyrophares en boucle)
     auto *logo = new QLabel;
     logo->setObjectName("logo");
     logo->setFixedSize(150, 150);
     logo->setAlignment(Qt::AlignCenter);
-    logo->setPixmap(QPixmap(":/logo.png").scaled(104, 104, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    auto *movie = new QMovie(":/logo_USPC_boucle.gif", QByteArray(), logo);
+    movie->setScaledSize(QSize(106, 106));   // reste à l'intérieur du cercle blanc
+    logo->setMovie(movie);
+    movie->start();
     l->addWidget(logo, 0, Qt::AlignHCenter);
     l->addSpacing(20);
 
@@ -345,6 +522,11 @@ QWidget *FireStation::creerSidebar()
         l->addWidget(b);
     }
     l->addStretch();
+
+    // Acteur connecté (Responsable RH)
+    auto *act = new QLabel(QString("Connecté :<br><b>%1</b><br>Responsable RH").arg(ACTEUR_RH));
+    act->setObjectName("acteur");
+    l->addWidget(act);
     return side;
 }
 
@@ -367,10 +549,10 @@ QWidget *FireStation::creerFormulaire()
         l->addWidget(lb);
     };
 
-    champ("Fonction");
-    cbFonction = new QComboBox;
-    cbFonction->addItems({"Pompier", "Chauffeur", "Mécanicien", "Administratif"});
-    l->addWidget(cbFonction);
+    champ("Poste");
+    cbPoste = new QComboBox;
+    cbPoste->addItems(POSTES);
+    l->addWidget(cbPoste);
 
     auto *rNom = new QHBoxLayout;
     auto *cNom = new QVBoxLayout, *cPre = new QVBoxLayout;
@@ -385,24 +567,26 @@ QWidget *FireStation::creerFormulaire()
     auto *rGr = new QHBoxLayout;
     auto *cG = new QVBoxLayout, *cS = new QVBoxLayout;
     cbGrade = new QComboBox;
-    cbGrade->addItems({"Sapeur", "Caporal", "Sergent", "Lieutenant", "Capitaine"});
+    cbGrade->addItems(GRADES);
     cbSpec = new QComboBox;
-    cbSpec->addItems({"Incendie", "Sauvetage", "Secourisme", "Chimique"});
+    cbSpec->addItems(SPECIALITES);
+    cbSpec->setMinimumContentsLength(10);
+    cbSpec->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     auto *lG = new QLabel("Grade");      lG->setProperty("champ", "true");
     auto *lS = new QLabel("Spécialité"); lS->setProperty("champ", "true");
     cG->addWidget(lG); cG->addWidget(cbGrade);
     cS->addWidget(lS); cS->addWidget(cbSpec);
-    rGr->addLayout(cG); rGr->addLayout(cS);
+    rGr->addLayout(cG, 1); rGr->addLayout(cS, 1);
     l->addLayout(rGr);
 
-    champ("Téléphone");
+    champ("Téléphone (utilisé pour les SMS)");
     edTel = new QLineEdit;
     edTel->setPlaceholderText("+216 20 123 456");
     l->addWidget(edTel);
 
     champ("Disponibilité");
     cbDispo = new QComboBox;
-    cbDispo->addItems({"Disponible", "En service", "Repos"});
+    cbDispo->addItems(DISPOS);
     l->addWidget(cbDispo);
 
     champ("Certifications (nom, date d'obtention, date d'échéance)");
@@ -410,6 +594,7 @@ QWidget *FireStation::creerFormulaire()
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setFixedHeight(180);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll->viewport()->setStyleSheet("background: transparent;");
     auto *box = new QWidget;
     certsLayout = new QVBoxLayout(box);
@@ -435,7 +620,7 @@ QWidget *FireStation::creerFormulaire()
     rb->addWidget(btnAjouter); rb->addWidget(btnModifier); rb->addWidget(btnReset);
     l->addLayout(rb);
 
-    connect(cbFonction, &QComboBox::currentTextChanged, this, [this] { onFonctionChanged(); });
+    connect(cbPoste, &QComboBox::currentTextChanged, this, [this] { onPosteChanged(); });
     connect(bAddC, &QPushButton::clicked, this, [this] { ajouterCertLigne(); });
     connect(btnAjouter,  &QPushButton::clicked, this, &FireStation::ajouter);
     connect(btnModifier, &QPushButton::clicked, this, &FireStation::modifier);
@@ -460,20 +645,23 @@ QWidget *FireStation::creerListe()
     auto *rf = new QHBoxLayout;
     edRecherche = new QLineEdit;
     edRecherche->setPlaceholderText("Rechercher par nom, grade, spécialité ou disponibilité…");
-    cbFiltreFonction = new QComboBox;
-    cbFiltreFonction->addItems({"Toutes fonctions", "Pompier", "Chauffeur", "Mécanicien", "Administratif"});
+    cbFiltrePoste = new QComboBox;
+    cbFiltrePoste->addItem("Tous les postes");
+    cbFiltrePoste->addItems(POSTES);
     rf->addWidget(edRecherche, 1);
-    rf->addWidget(cbFiltreFonction);
+    rf->addWidget(cbFiltrePoste);
     l->addLayout(rf);
 
     tblAgents = new QTableWidget(0, 7);
-    tblAgents->setHorizontalHeaderLabels({"ID", "NOM", "FONCTION", "GRADE", "SPÉCIALITÉ",
+    tblAgents->setHorizontalHeaderLabels({"ID", "NOM", "POSTE", "GRADE", "SPÉCIALITÉ",
                                           "DISPONIBILITÉ", "ACTION"});
     tblAgents->verticalHeader()->hide();
     tblAgents->setShowGrid(false);
+    tblAgents->setMouseTracking(true);
     tblAgents->setEditTriggers(QAbstractItemView::NoEditTriggers);
     tblAgents->setSelectionBehavior(QAbstractItemView::SelectRows);
     tblAgents->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    tblAgents->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     tblAgents->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
     tblAgents->horizontalHeader()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
     l->addWidget(tblAgents, 1);
@@ -486,8 +674,14 @@ QWidget *FireStation::creerListe()
     lw->addWidget(zone);
 
     connect(edRecherche, &QLineEdit::textChanged, this, [this] { rafraichir(); });
-    connect(cbFiltreFonction, &QComboBox::currentTextChanged, this, [this] { rafraichir(); });
+    connect(cbFiltrePoste, &QComboBox::currentTextChanged, this, [this] { rafraichir(); });
     return wrap;
+}
+
+void FireStation::allerPage(int index)
+{
+    pages->setCurrentIndex(index);
+    pages->currentWidget()->update();   // redessine immédiatement la nouvelle page
 }
 
 // ============================================================================
@@ -503,45 +697,42 @@ QWidget *FireStation::creerStatsWidget()
 
     // --- en-tête
     auto *head = new QHBoxLayout;
-    auto *left = new QVBoxLayout;
-    left->setSpacing(2);
-    left->addWidget(new QLabel("<span style='color:#777'>Personnel&nbsp;&nbsp;›&nbsp;&nbsp;</span>"
-                               "<b style='color:#b3211c'>Statistiques</b>"));
-    left->addWidget(etiquette("Statistiques — Gestion du personnel", "titre"));
-    left->addWidget(etiquette("Charge de travail, disponibilité et répartition de l'effectif", "sous"));
-    head->addLayout(left, 1);
-
+    head->addLayout(enTetePage("Statistiques", "Statistiques — Gestion du personnel",
+                               "Charge de travail, disponibilité et répartition de l'effectif"), 1);
     m_btnStatsRetour = new QPushButton("‹ Retour à la liste");
     m_btnStatsRetour->setObjectName("retour");
     m_btnStatsExport = new QPushButton("↓ Exporter en PDF");
     head->addWidget(m_btnStatsRetour, 0, Qt::AlignTop);
     head->addWidget(m_btnStatsExport, 0, Qt::AlignTop);
     v->addLayout(head);
-    connect(m_btnStatsRetour, &QPushButton::clicked, this, [this] { pages->setCurrentIndex(0); });
+    connect(m_btnStatsRetour, &QPushButton::clicked, this, [this] { allerPage(0); });
     connect(m_btnStatsExport, &QPushButton::clicked, this, &FireStation::exporterStatsPdf);
 
-    // --- calculs à partir des données réelles
+    // --- calculs à partir des données
     const int total = int(m_agents.size());
-    int nDispo = 0, nServ = 0, nRepos = 0, nPomp = 0;
-    bool hot = false;
+    int nDispo = 0, nInterv = 0, nIndispo = 0, nOp = 0;
     for (const Agent &a : m_agents) {
         if (a.dispo == "Disponible") ++nDispo;
-        else if (a.dispo == "En service") ++nServ;
-        else ++nRepos;
-        if (a.fonction == "Pompier") ++nPomp;
-        if (a.interv48 >= MAX_INTERV_48H) hot = true;
+        else if (a.dispo == "En intervention") ++nInterv;
+        else ++nIndispo;
+        if (estOperationnel(a.poste)) ++nOp;
     }
     QList<Agent> tri = m_agents;
     std::stable_sort(tri.begin(), tri.end(),
                      [](const Agent &x, const Agent &y) { return x.mois > y.mois; });
 
-    // --- cartes de chiffres
+    // --- cartes de chiffres (compteurs animés, apparition en cascade)
     auto *kp = new QHBoxLayout;
     kp->setSpacing(12);
-    kp->addWidget(carteKpi(QString::number(total),  "Effectif total", "#b3211c"), 1);
-    kp->addWidget(carteKpi(QString::number(nDispo), "Disponibles",    "#1e8e5a"), 1);
-    kp->addWidget(carteKpi(QString::number(nServ),  "En service",     "#c46a00"), 1);
-    kp->addWidget(carteKpi(QString::number(nRepos), "En repos",       "#777777"), 1);
+    QList<QFrame *> kpis = {
+                             carteKpi(total,    "Effectif total",                       "#b3211c", 100),
+                             carteKpi(nDispo,   "Disponibles",                          "#1e8e5a", 180),
+                             carteKpi(nInterv,  "En intervention",                      "#c46a00", 260),
+                             carteKpi(nIndispo, "Indisponibles (repos, congé, formation)", "#777777", 340)};
+    for (int i = 0; i < kpis.size(); ++i) {
+        kp->addWidget(kpis[i], 1);
+        fondu(kpis[i], 400, 80 * i);
+    }
     v->addLayout(kp);
 
     // --- ligne du milieu : graphique + répartitions
@@ -553,46 +744,50 @@ QWidget *FireStation::creerStatsWidget()
     lc->addWidget(etiquette("Charge de travail par agent", "h3"));
     lc->addWidget(etiquette("Nombre d'interventions — 30 derniers jours", "sous"));
     lc->addWidget(new BarChart(tri), 1);
-    if (hot)
-        lc->addWidget(etiquette(QString("Orange : agent en risque de surcharge (%1 interventions ou plus en 48 h)")
-                                    .arg(MAX_INTERV_48H), "sous"));
     mid->addWidget(cChart, 11);
 
-    QList<Seg> gr = {{"Capitaine", 0, QColor("#8b0000")}, {"Lieutenant", 0, QColor("#c00000")},
-                     {"Sergent", 0, QColor("#e06a6a")},   {"Caporal", 0, QColor("#f0b8b8")},
-                     {"Sapeur", 0, QColor("#f8dada")}};
-    QList<Seg> sp = {{"Incendie", 0, QColor("#1e5fb3")},  {"Sauvetage", 0, QColor("#4f93e0")},
-                     {"Chimique", 0, QColor("#8fb8ea")},  {"Secourisme", 0, QColor("#c5daf5")}};
+    QList<Seg> gr = {{"Capitaine", 0, QColor("#8b0000")}, {"Lieutenant", 0, QColor("#b00000")},
+                     {"Adjudant", 0, QColor("#d43a3a")},  {"Sergent", 0, QColor("#e57373")},
+                     {"Caporal", 0, QColor("#f0b0b0")},   {"Agent", 0, QColor("#f8dada")}};
+    QList<Seg> sp = {{"Sauvetage-déblaiement", 0, QColor("#1e5fb3")},
+                     {"Recherche cynophile", 0, QColor("#3d7fd0")},
+                     {"Risques chimiques (NRBC)", 0, QColor("#6fa3e3")},
+                     {"Secourisme", 0, QColor("#9fc2ee")},
+                     {"Lutte contre l'incendie", 0, QColor("#cfe0f7")}};
     for (const Agent &a : m_agents) {
-        if (a.fonction != "Pompier") continue;
+        if (!estOperationnel(a.poste)) continue;
         for (Seg &s : gr) if (s.label == a.grade)      ++s.n;
         for (Seg &s : sp) if (s.label == a.specialite) ++s.n;
     }
     QList<Seg> grV, spV;
     for (const Seg &s : gr) if (s.n > 0) grV.append(s);
     for (const Seg &s : sp) if (s.n > 0) spV.append(s);
-    const QString sur = QString("Sur les %1 %2").arg(nPomp).arg(nPomp > 1 ? "pompiers" : "pompier");
+    const QString sur = QString("Sur les %1 agents opérationnels").arg(nOp);
 
     QVBoxLayout *lr = nullptr;
     QFrame *cRight = nouvelleCarte(&lr);
-    ajouterDistribution(lr, "Répartition par grade", sur, grV, "Aucun pompier enregistré.");
+    ajouterDistribution(lr, "Répartition par grade", sur, grV, "Aucun agent opérationnel.");
     lr->addSpacing(18);
-    ajouterDistribution(lr, "Répartition par spécialité", sur, spV, "Aucun pompier enregistré.");
+    ajouterDistribution(lr, "Répartition par spécialité", sur, spV, "Aucun agent opérationnel.");
     lr->addStretch();
     mid->addWidget(cRight, 10);
     v->addLayout(mid);
+    fondu(cChart, 450, 250);
+    fondu(cRight, 450, 330);
 
     // --- disponibilité de l'effectif
-    QList<Seg> dv = {{"Disponible", nDispo, QColor("#1e8e5a")},
-                     {"En service", nServ,  QColor("#c46a00")},
-                     {"Repos",      nRepos, QColor("#9a9a9a")}};
     QList<Seg> dvV;
-    for (const Seg &s : dv) if (s.n > 0) dvV.append(s);
+    for (const QString &d : DISPOS) {
+        int n = 0;
+        for (const Agent &a : m_agents) if (a.dispo == d) ++n;
+        if (n > 0) dvV.append({d, n, couleurDispo(d)});
+    }
     QVBoxLayout *ld = nullptr;
     QFrame *cDispo = nouvelleCarte(&ld);
     ajouterDistribution(ld, "Disponibilité de l'effectif", "Répartition actuelle des statuts",
                         dvV, "Aucun agent.");
     v->addWidget(cDispo);
+    fondu(cDispo, 450, 420);
     v->addStretch();
     return root;
 }
@@ -602,7 +797,7 @@ void FireStation::afficherStats()
     QWidget *w = creerStatsWidget();
     statsScroll->setWidget(w);   // remplace (et supprime) l'ancienne page
     m_statsContent = w;
-    pages->setCurrentIndex(1);
+    allerPage(1);
 }
 
 void FireStation::exporterStatsPdf()
@@ -638,32 +833,63 @@ void FireStation::exporterStatsPdf()
 void FireStation::chargerDonnees()
 {
     const QDate t = QDate::currentDate();
-    auto ag = [&](QString id, QString nom, QString pre, QString fn, QString gr, QString sp,
-                  QString tel, QString dispo, QList<Certification> certs,
-                  int i48, int repos, int mois) {
+    auto ag = [&](QString id, QString nom, QString pre, QString poste, QString gr, QString sp,
+                  QString tel, QString dispo, QList<Certification> certs, int mois) {
         Agent a;
-        a.id = id; a.nom = nom; a.prenom = pre; a.fonction = fn; a.grade = gr;
-        a.specialite = sp; a.tel = tel; a.dispo = dispo; a.certs = certs;
-        a.interv48 = i48; a.reposH = repos; a.mois = mois;
-        a.rh = DEF_RH; a.chef = DEF_CHEF;
+        a.id = id; a.nom = nom; a.prenom = pre; a.poste = poste; a.grade = gr;
+        a.specialite = sp; a.tel = tel; a.dispo = dispo; a.certs = certs; a.mois = mois;
         m_agents.append(a);
     };
-    ag("POM-014", "Ben Ali", "Karim", "Pompier", "Sergent", "Sauvetage", "+216 20 123 456",
-       "Disponible", {{"Sauvetage", t.addDays(-300), t.addDays(65)}}, 2, 14, 14);
-    ag("POM-015", "Trabelsi", "Sami", "Pompier", "Capitaine", "Incendie", "+216 22 555 010",
-       "En service", {{"Incendie", t.addDays(-200), t.addDays(160)}}, 6, 9, 9);
-    ag("POM-016", "Gharbi", "Amine", "Mécanicien", "", "", "+216 98 765 432",
-       "Disponible", {}, 0, 20, 16);
-    ag("POM-017", "Jlassi", "Nour", "Pompier", "Sergent", "Secourisme", "+216 50 321 987",
-       "Repos", {{"Secourisme", t.addDays(-353), t.addDays(12)}}, 1, 30, 6);
-    ag("POM-018", "Mansouri", "Leila", "Administratif", "", "", "+216 71 000 111",
-       "Disponible", {}, 0, 24, 0);
-    ag("POM-019", "Sassi", "Mohamed", "Pompier", "Caporal", "Incendie", "+216 55 111 222",
-       "Disponible", {{"Incendie", t.addDays(-100), t.addDays(250)}}, 2, 16, 11);
-    ag("POM-020", "Amri", "Hedi", "Pompier", "Lieutenant", "Chimique", "+216 52 333 444",
-       "En service", {{"Chimique", t.addDays(-150), t.addDays(200)}}, 1, 18, 4);
-    ag("POM-021", "Ben Salah", "Walid", "Pompier", "Sapeur", "Sauvetage", "+216 53 555 666",
-       "Disponible", {}, 3, 15, 8);
+    ag("AGT-014", "Ben Ali", "Karim", "Pompier", "Sergent", "Sauvetage-déblaiement",
+       "+216 20 123 456", "Disponible",
+       {{C_PSE1, t.addDays(-165), t.addDays(200)}, {C_SD1, t.addDays(-300), t.addDays(65)}}, 14);
+    ag("AGT-015", "Trabelsi", "Sami", "Chef de caserne", "Capitaine", "Sauvetage-déblaiement",
+       "+216 22 555 010", "En intervention",
+       {{C_PSE1, t.addDays(-200), t.addDays(160)}, {C_SD1, t.addDays(-400), t.addDays(300)},
+        {C_SD2, t.addDays(-300), t.addDays(400)}, {C_GOC, t.addDays(-200), t.addDays(500)}}, 9);
+    ag("AGT-016", "Gharbi", "Amine", "Mécanicien", "Caporal", "",
+       "+216 98 765 432", "Disponible", {}, 16);
+    ag("AGT-017", "Jlassi", "Nour", "Secouriste", "Sergent", "Secourisme",
+       "+216 50 321 987", "En repos", {{C_PSE1, t.addDays(-353), t.addDays(12)}}, 6);
+    ag("AGT-018", "Mansouri", "Leila", "Responsable RH", "Lieutenant", "",
+       "+216 71 000 111", "Disponible", {}, 0);
+    ag("AGT-022", "Hammami", "Rim", "Administratif", "", "",
+       "+216 71 000 222", "Disponible", {}, 0);
+    ag("AGT-019", "Sassi", "Mohamed", "Maître-chien", "Caporal", "Recherche cynophile",
+       "+216 55 111 222", "Disponible",
+       {{C_PSE1, t.addDays(-100), t.addDays(250)}, {C_CYNO, t.addDays(-320), t.addDays(45)}}, 11);
+    ag("AGT-020", "Amri", "Hedi", "Pompier", "Lieutenant", "Risques chimiques (NRBC)",
+       "+216 52 333 444", "En formation",
+       {{C_PSE1, t.addDays(-150), t.addDays(200)}, {C_NRBC, t.addDays(-370), t.addDays(-5)}}, 4);
+    ag("AGT-021", "Ben Salah", "Walid", "Chauffeur", "Agent", "Lutte contre l'incendie",
+       "+216 53 555 666", "En congé", {}, 8);
+}
+
+// Catalogue des sessions de formation (Innovation 2)
+void FireStation::chargerSessions()
+{
+    const QDate t = QDate::currentDate();
+    // ENPC = École Nationale de la Protection Civile
+    const QString ENPC  = "ENPC — Jbel Jloud, Tunis";
+    const QString ZRIBA = "Centre de formation de Zriba";
+    const QString BASE  = "Base de l'USPC — Naassen";
+    auto s = [&](QString id, QString cert, QString lieu, int jours, int places) {
+        SessionFormation f;
+        f.id = id; f.certification = cert; f.lieu = lieu;
+        f.date = t.addDays(jours); f.places = places;
+        m_sessions.append(f);
+    };
+    s("SES-01", C_PSE1,  ENPC,  10,  6);
+    s("SES-02", C_PSE1,  ZRIBA, 35, 10);
+    s("SES-03", C_PSE2,  ENPC,  21,  8);
+    s("SES-04", C_SD1,   ZRIBA, 28, 12);
+    s("SES-05", C_SD2,   ZRIBA, 45,  6);
+    s("SES-06", C_CYNO,  BASE,  18,  4);
+    s("SES-07", C_NRBC,  ENPC,  14,  5);
+    s("SES-08", C_COND,  ENPC,  30,  6);
+    s("SES-09", C_MAINT, ENPC,  40,  4);
+    s("SES-10", C_FDF,   ZRIBA, 25, 10);
+    s("SES-11", C_GOC,   ENPC,  60,  8);
 }
 
 QString FireStation::nouvelId() const
@@ -671,7 +897,7 @@ QString FireStation::nouvelId() const
     int max = 0;
     for (const Agent &a : m_agents)
         max = std::max(max, a.id.mid(4).toInt());
-    return QString("POM-%1").arg(max + 1, 3, 10, QChar('0'));
+    return QString("AGT-%1").arg(max + 1, 3, 10, QChar('0'));
 }
 
 int FireStation::indexParId(const QString &id) const
@@ -684,11 +910,11 @@ int FireStation::indexParId(const QString &id) const
 // ============================================================================
 //  Formulaire
 // ============================================================================
-void FireStation::onFonctionChanged()
+void FireStation::onPosteChanged()
 {
-    const bool p = cbFonction->currentText() == "Pompier";
-    cbGrade->setEnabled(p);
-    cbSpec->setEnabled(p);
+    const QString poste = cbPoste->currentText();
+    cbGrade->setEnabled(aUnGrade(poste));
+    cbSpec->setEnabled(estOperationnel(poste));
 }
 
 void FireStation::ajouterCertLigne(const Certification &c)
@@ -700,8 +926,16 @@ void FireStation::ajouterCertLigne(const Certification &c)
     g->setHorizontalSpacing(6);
     g->setVerticalSpacing(3);
 
-    auto *nom = new QLineEdit(c.nom);
-    nom->setPlaceholderText("Nom de la certification");
+    auto *nom = new QComboBox;
+    nom->setEditable(true);      // liste des certifications connues + saisie libre
+    nom->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    nom->setMinimumContentsLength(12);
+    QStringList connues;
+    for (const SessionFormation &s : m_sessions)
+        if (!connues.contains(s.certification)) connues << s.certification;
+    nom->addItems(connues);
+    nom->setCurrentText(c.nom);
+    nom->lineEdit()->setPlaceholderText("Nom de la certification");
     g->addWidget(nom, 0, 0, 1, 3);
 
     auto *l1 = new QLabel("Obtention");
@@ -732,8 +966,9 @@ void FireStation::ajouterCertLigne(const Certification &c)
     connect(del, &QToolButton::clicked, this, [this, frame] { retirerCert(frame); });
 
     certsLayout->insertWidget(certsLayout->count() - 1, frame);
+    fondu(frame, 300);
     CertRow r;
-    r.frame = frame; r.nom = nom; r.obt = obt; r.ech = ech;
+    r.frame = frame; r.nom = nom->lineEdit(); r.obt = obt; r.ech = ech;
     m_certRows.append(r);
 }
 
@@ -759,24 +994,23 @@ void FireStation::viderCerts()
 
 bool FireStation::lireFormulaire(Agent &a, QString &erreur)
 {
-    a.nom      = edNom->text().trimmed();
-    a.prenom   = edPrenom->text().trimmed();
-    a.fonction = cbFonction->currentText();
-    const bool p = a.fonction == "Pompier";
-    a.grade      = p ? cbGrade->currentText() : QString();
-    a.specialite = p ? cbSpec->currentText()  : QString();
+    a.nom    = edNom->text().trimmed();
+    a.prenom = edPrenom->text().trimmed();
+    a.poste  = cbPoste->currentText();
+    a.grade      = aUnGrade(a.poste)       ? cbGrade->currentText() : QString();
+    a.specialite = estOperationnel(a.poste) ? cbSpec->currentText()  : QString();
     a.tel        = edTel->text().trimmed();
     a.dispo      = cbDispo->currentText();
 
     if (a.nom.isEmpty() || a.prenom.isEmpty()) { erreur = "Nom et prénom obligatoires."; return false; }
     if (!QRegularExpression("^\\+?[0-9 ]{8,15}$").match(a.tel).hasMatch()) {
-        erreur = "Numéro de téléphone invalide."; return false;
+        erreur = "Numéro de téléphone invalide (nécessaire pour les SMS)."; return false;
     }
 
     a.certs.clear();
     for (const CertRow &r : m_certRows) {
         Certification c;
-        c.nom       = r.nom->text().trimmed();
+        c.nom = r.nom->text().trimmed();
         if (c.nom.isEmpty()) continue;          // ligne vide = pas de certification
         c.obtention = r.obt->date();
         c.echeance  = r.ech->date();
@@ -793,11 +1027,10 @@ void FireStation::ajouter()
 {
     Agent a; QString err;
     if (!lireFormulaire(a, err)) { lblErreur->setText(err); return; }
-    a.id   = nouvelId();
-    a.rh   = DEF_RH;        // affectation automatique
-    a.chef = DEF_CHEF;
+    a.id = nouvelId();
     m_agents.append(a);
     reinitialiser();
+    verifierEcheancesSms();
     rafraichir();
 }
 
@@ -808,9 +1041,10 @@ void FireStation::modifier()
     Agent a; QString err;
     if (!lireFormulaire(a, err)) { lblErreur->setText(err); return; }
     Agent &old = m_agents[i];
-    old.nom = a.nom; old.prenom = a.prenom; old.fonction = a.fonction; old.grade = a.grade;
+    old.nom = a.nom; old.prenom = a.prenom; old.poste = a.poste; old.grade = a.grade;
     old.specialite = a.specialite; old.tel = a.tel; old.dispo = a.dispo; old.certs = a.certs;
     reinitialiser();
+    verifierEcheancesSms();
     rafraichir();
 }
 
@@ -819,12 +1053,14 @@ void FireStation::reinitialiser()
     m_editingId.clear();
     lblFormTitle->setText("＋ Nouvel agent");
     edNom->clear(); edPrenom->clear(); edTel->clear();
-    cbFonction->setCurrentIndex(0);
+    cbPoste->setCurrentIndex(0);
+    cbGrade->setCurrentIndex(0);
+    cbSpec->setCurrentIndex(0);
     cbDispo->setCurrentIndex(0);
     viderCerts();
     ajouterCertLigne();          // une ligne de saisie toujours visible
     lblErreur->clear();
-    onFonctionChanged();
+    onPosteChanged();
     btnAjouter->setEnabled(true);
     btnModifier->setEnabled(false);
 }
@@ -837,8 +1073,8 @@ void FireStation::chargerDansFormulaire(const QString &id)
     m_editingId = id;
     lblFormTitle->setText("✎ Modifier " + id);
     edNom->setText(a.nom); edPrenom->setText(a.prenom); edTel->setText(a.tel);
-    cbFonction->setCurrentText(a.fonction);
-    onFonctionChanged();
+    cbPoste->setCurrentText(a.poste);
+    onPosteChanged();
     if (!a.grade.isEmpty())      cbGrade->setCurrentText(a.grade);
     if (!a.specialite.isEmpty()) cbSpec->setCurrentText(a.specialite);
     cbDispo->setCurrentText(a.dispo);
@@ -862,18 +1098,31 @@ void FireStation::consulter(const QString &id)
                           c.echeance.toString("dd/MM/yyyy"));
     if (certs.isEmpty()) certs = "<li>Aucune</li>";
 
+    QString recos;
+    for (const Recommandation &r : recommandationsPour(a)) {
+        QString ou = "aucune session programmée";
+        if (r.sessionIndex >= 0) {
+            const SessionFormation &s = m_sessions[r.sessionIndex];
+            ou = QString("%1, le %2").arg(s.lieu, s.date.toString("dd/MM/yyyy"));
+        }
+        recos += QString("<li><b>%1</b> (%2) — %3%4</li>")
+                     .arg(r.certification.toHtmlEscaped(), r.statut, ou.toHtmlEscaped(),
+                          r.inscrit ? " — <b>inscrit</b>" : "");
+    }
+    if (recos.isEmpty()) recos = "<li>Aucune, le profil est à jour.</li>";
+
     QMessageBox box(this);
     box.setWindowTitle("Fiche agent");
     box.setTextFormat(Qt::RichText);
     box.setText(QString("<h3>%1 — %2 %3</h3>"
-                        "<p>%4 %5 %6<br>Tél : %7<br>Disponibilité : %8<br>"
-                        "Responsable RH : %9<br>Chef de caserne : %10<br>"
-                        "Interventions (48 h) : %11 — Repos : %12 h</p>"
-                        "<b>Certifications</b><ul>%13</ul>")
-                    .arg(a.id, a.nom.toHtmlEscaped(), a.prenom.toHtmlEscaped(),
-                         a.fonction, a.grade, a.specialite, a.tel, a.dispo,
-                         a.rh)
-                    .arg(a.chef).arg(a.interv48).arg(a.reposH).arg(certs));
+                        "<p>Poste : %4<br>Grade : %5<br>Spécialité : %6<br>"
+                        "Tél : %7<br>Disponibilité : %8</p>"
+                        "<b>Certifications</b><ul>%9</ul>"
+                        "<b>Formations recommandées</b><ul>%10</ul>")
+                    .arg(a.id, a.nom.toHtmlEscaped(), a.prenom.toHtmlEscaped(), a.poste,
+                         a.grade.isEmpty() ? "—" : a.grade,
+                         a.specialite.isEmpty() ? "—" : a.specialite, a.tel, a.dispo)
+                    .arg(certs, recos));
     box.exec();
 }
 
@@ -883,6 +1132,8 @@ void FireStation::supprimer(const QString &id)
         != QMessageBox::Yes) return;
     const int i = indexParId(id);
     if (i >= 0) m_agents.removeAt(i);
+    for (SessionFormation &s : m_sessions)
+        if (s.inscrits.removeAll(id) > 0) ++s.places;
     if (m_editingId == id) reinitialiser();
     rafraichir();
 }
@@ -893,11 +1144,11 @@ void FireStation::supprimer(const QString &id)
 void FireStation::rafraichir()
 {
     const QString q = edRecherche->text().trimmed().toLower();
-    const QString f = cbFiltreFonction->currentIndex() == 0 ? QString() : cbFiltreFonction->currentText();
+    const QString f = cbFiltrePoste->currentIndex() == 0 ? QString() : cbFiltrePoste->currentText();
 
     QList<const Agent *> L;
     for (const Agent &a : m_agents) {
-        if (!f.isEmpty() && a.fonction != f) continue;
+        if (!f.isEmpty() && a.poste != f) continue;
         const QString hay = (a.nom + " " + a.prenom + " " + a.grade + " " + a.specialite + " " + a.dispo).toLower();
         if (!q.isEmpty() && !hay.contains(q)) continue;
         L << &a;
@@ -905,7 +1156,7 @@ void FireStation::rafraichir()
     const QString tri = cbTri->currentText();
     std::stable_sort(L.begin(), L.end(), [&](const Agent *x, const Agent *y) {
         if (tri == "Nom")   return x->nom < y->nom;
-        if (tri == "Grade") return x->grade < y->grade;
+        if (tri == "Grade") return GRADES.indexOf(x->grade) > GRADES.indexOf(y->grade);
         return ordreDispo(x->dispo) < ordreDispo(y->dispo);
     });
 
@@ -914,7 +1165,7 @@ void FireStation::rafraichir()
         const int r = tblAgents->rowCount();
         tblAgents->insertRow(r);
         tblAgents->setRowHeight(r, 44);
-        const QStringList vals = {a->id, a->nom + " " + a->prenom, a->fonction,
+        const QStringList vals = {a->id, a->nom + " " + a->prenom, a->poste,
                                   a->grade.isEmpty() ? "—" : a->grade,
                                   a->specialite.isEmpty() ? "—" : a->specialite};
         for (int c = 0; c < vals.size(); ++c)
@@ -922,9 +1173,8 @@ void FireStation::rafraichir()
 
         auto *disp = new QTableWidgetItem(a->dispo);
         disp->setTextAlignment(Qt::AlignCenter);
-        if (a->dispo == "Disponible")      { disp->setBackground(QColor("#dff3e5")); disp->setForeground(QColor("#1e7a3c")); }
-        else if (a->dispo == "En service") { disp->setBackground(QColor("#fdebd0")); disp->setForeground(QColor("#a86200")); }
-        else                               { disp->setBackground(QColor("#eeeeee")); disp->setForeground(QColor("#777777")); }
+        disp->setBackground(fondDispo(a->dispo));
+        disp->setForeground(couleurDispo(a->dispo).darker(115));
         tblAgents->setItem(r, 5, disp);
 
         auto *w = new QWidget;
@@ -946,16 +1196,17 @@ void FireStation::rafraichir()
     mettreAJourAlertes();
 }
 
-void FireStation::ajouterAlerte(const QString &titre, const QString &detail,
-                                bool info, const QString &idAgent)
+void FireStation::ajouterAlerte(const QString &titre, const QString &detail, bool info,
+                                const QString &idAgent, const QString &actionTxt,
+                                std::function<void()> action)
 {
     auto *f = new QFrame;
     f->setObjectName(info ? "alerteInfo" : "alerte");
     auto *h = new QHBoxLayout(f);
     h->setContentsMargins(12, 10, 12, 10);
 
-    auto *p = new QLabel(info ? "✓" : "!");
-    p->setObjectName("pastille");
+    auto *p = new QLabel(info ? "i" : "!");
+    p->setObjectName(info ? "pastilleInfo" : "pastille");
     p->setFixedSize(24, 24);
     p->setAlignment(Qt::AlignCenter);
     h->addWidget(p);
@@ -965,11 +1216,20 @@ void FireStation::ajouterAlerte(const QString &titre, const QString &detail,
     t->setWordWrap(true);
     h->addWidget(t, 1);
 
+    if (action) {
+        auto *b = new QPushButton(actionTxt);
+        b->setCursor(Qt::PointingHandCursor);
+        connect(b, &QPushButton::clicked, this, action);
+        h->addWidget(b);
+    }
     if (!idAgent.isEmpty()) {
         auto *b = new QPushButton("Voir ›");
+        b->setCursor(Qt::PointingHandCursor);
         connect(b, &QPushButton::clicked, this, [this, idAgent] { consulter(idAgent); });
         h->addWidget(b);
     }
+    // apparition en cascade
+    fondu(f, 350, 70 * alertesLayout->count());
     alertesLayout->addWidget(f);
 }
 
@@ -981,36 +1241,416 @@ void FireStation::mettreAJourAlertes()
     }
     const QDate today = QDate::currentDate();
     int n = 0;
+    int nRecos = 0;
+    QSet<QString> agentsRecos;
     for (const Agent &a : m_agents) {
         const QString who = QString("%1 — %2 %3").arg(a.id, a.nom, a.prenom);
 
-        // Innovation 1 : renouvellement des certifications
+        // Innovation 1 : renouvellement des certifications (SMS envoyé à l'agent)
         for (const Certification &c : a.certs) {
             const int d = int(today.daysTo(c.echeance));
-            if (d <= ALERTE_JOURS) {
-                ajouterAlerte("Certification à renouveler — alerte automatique",
-                              QString("%1 — %2 %3").arg(who, c.nom,
-                                                        d < 0 ? QString("expirée depuis %1 jour(s)").arg(-d)
-                                                              : QString("expire dans %1 jour(s)").arg(d)),
-                              false, a.id);
-                ++n;
-            }
-        }
-        // Innovation 2 : surcharge et repos réglementaire
-        if (a.interv48 >= MAX_INTERV_48H) {
-            ajouterAlerte("Risque de surcharge",
-                          QString("%1 — %2 interventions en 48 h (seuil %3)")
-                              .arg(who).arg(a.interv48).arg(MAX_INTERV_48H), false, a.id);
+            if (d > ALERTE_JOURS) continue;
+            const QString etat = d < 0 ? QString("expirée depuis %1 jour(s)").arg(-d)
+                                       : QString("expire dans %1 jour(s)").arg(d);
+            const QString sms = m_smsEnvoyes.contains(cleSms(a, c))
+                                    ? " — SMS de rappel envoyé à l'agent" : "";
+            const Agent copie = a;
+            const Certification cert = c;
+            ajouterAlerte("Certification à renouveler",
+                          QString("%1 — %2 %3%4").arg(who, c.nom, etat, sms), false, a.id,
+                          "Renvoyer le SMS", [this, copie, cert] {
+                              const int j = int(QDate::currentDate().daysTo(cert.echeance));
+                              envoyerSms(copie.tel,
+                                         QString("USPC - Rappel : votre certification \"%1\" %2 "
+                                                 "(échéance %3). Contactez le service RH.")
+                                             .arg(cert.nom,
+                                                  j < 0 ? "est expirée" : QString("expire dans %1 jours").arg(j),
+                                                  cert.echeance.toString("dd/MM/yyyy")),
+                                         copie.nom + " " + copie.prenom);
+                          });
             ++n;
         }
-        if (a.fonction == "Pompier" && a.reposH < MIN_REPOS_H) {
-            ajouterAlerte("Repos réglementaire non respecté",
-                          QString("%1 — %2 h de repos (minimum %3 h)")
-                              .arg(who).arg(a.reposH).arg(MIN_REPOS_H), false, a.id);
-            ++n;
+        // Innovation 2 : formations recommandées (résumé)
+        for (const Recommandation &r : recommandationsPour(a)) {
+            if (r.inscrit) continue;
+            ++nRecos;
+            agentsRecos.insert(a.id);
         }
     }
+    if (nRecos > 0) {
+        ajouterAlerte("Formations recommandées",
+                      QString("%1 certification(s) à planifier pour %2 agent(s), avec lieu et date de session.")
+                          .arg(nRecos).arg(agentsRecos.size()),
+                      true, QString(), "Voir les formations ›", [this] { afficherFormations(); });
+        ++n;
+    }
     if (n == 0) ajouterAlerte("Aucune alerte", "Tout est en ordre.", true, QString());
+}
+
+// ============================================================================
+//  Innovation 1 : SMS de renouvellement des certifications
+// ============================================================================
+QString FireStation::cleSms(const Agent &a, const Certification &c) const
+{
+    return a.id + "|" + c.nom + "|" + c.echeance.toString(Qt::ISODate);
+}
+
+// Envoie automatiquement un SMS pour chaque certification qui arrive à échéance
+// (une seule fois par certification et par échéance).
+void FireStation::verifierEcheancesSms()
+{
+    const QDate today = QDate::currentDate();
+    for (const Agent &a : m_agents) {
+        for (const Certification &c : a.certs) {
+            const int d = int(today.daysTo(c.echeance));
+            if (d > ALERTE_JOURS) continue;
+            const QString cle = cleSms(a, c);
+            if (m_smsEnvoyes.contains(cle)) continue;
+            const QString msg = d < 0
+                                    ? QString("USPC - Rappel : votre certification \"%1\" est expirée depuis le %2. "
+                                              "Contactez le service RH pour la renouveler.")
+                                          .arg(c.nom, c.echeance.toString("dd/MM/yyyy"))
+                                    : QString("USPC - Rappel : votre certification \"%1\" expire le %2 (dans %3 jours). "
+                                              "Contactez le service RH pour la renouveler.")
+                                          .arg(c.nom, c.echeance.toString("dd/MM/yyyy")).arg(d);
+            envoyerSms(a.tel, msg, a.nom + " " + a.prenom);
+            m_smsEnvoyes.insert(cle);
+        }
+    }
+}
+
+void FireStation::envoyerSms(const QString &tel, const QString &message, const QString &destinataire)
+{
+    QString numero = tel;
+    numero.remove(' ');
+    const QString horodatage = QDateTime::currentDateTime().toString("dd/MM/yyyy HH:mm");
+
+    // --- Mode simulation : aucun fournisseur configuré
+    if (SMS_ACCOUNT_SID.isEmpty()) {
+        m_journalSms.prepend(QString("[%1] (simulation) → %2 (%3) : %4")
+                                 .arg(horodatage, destinataire, numero, message));
+        statusBar()->showMessage(QString("SMS simulé envoyé à %1 (%2)").arg(destinataire, numero), 5000);
+        return;
+    }
+
+    // --- Mode réel : API Twilio (https://www.twilio.com/docs/messaging/api)
+    QNetworkRequest req(QUrl(QString("https://api.twilio.com/2010-04-01/Accounts/%1/Messages.json")
+                                 .arg(SMS_ACCOUNT_SID)));
+    req.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
+    req.setRawHeader("Authorization",
+                     "Basic " + QString("%1:%2").arg(SMS_ACCOUNT_SID, SMS_AUTH_TOKEN).toUtf8().toBase64());
+    const QByteArray corps = "To="     + QUrl::toPercentEncoding(numero)
+                             + "&From="  + QUrl::toPercentEncoding(SMS_EXPEDITEUR)
+                             + "&Body="  + QUrl::toPercentEncoding(message);
+    QNetworkReply *rep = m_net->post(req, corps);
+    connect(rep, &QNetworkReply::finished, this, [this, rep, horodatage, destinataire, numero, message] {
+        const bool ok = rep->error() == QNetworkReply::NoError;
+        m_journalSms.prepend(QString("[%1] %2 → %3 (%4) : %5")
+                                 .arg(horodatage, ok ? "envoyé" : "ÉCHEC (" + rep->errorString() + ")",
+                                      destinataire, numero, message));
+        statusBar()->showMessage(ok ? "SMS envoyé à " + destinataire
+                                    : "Échec de l'envoi du SMS à " + destinataire, 5000);
+        rep->deleteLater();
+    });
+}
+
+void FireStation::afficherJournalSms()
+{
+    QDialog dlg(this);
+    dlg.setWindowTitle("Journal des SMS");
+    dlg.resize(720, 400);
+    auto *l = new QVBoxLayout(&dlg);
+    l->addWidget(etiquette(SMS_ACCOUNT_SID.isEmpty()
+                               ? "Mode simulation : configurez un fournisseur SMS dans firestation.cpp pour un envoi réel."
+                               : "Envoi réel activé.", "sous"));
+    auto *liste = new QListWidget;
+    liste->setWordWrap(true);
+    liste->setAlternatingRowColors(true);
+    if (m_journalSms.isEmpty()) liste->addItem("Aucun SMS envoyé pour le moment.");
+    else liste->addItems(m_journalSms);
+    l->addWidget(liste, 1);
+    auto *bb = new QDialogButtonBox(QDialogButtonBox::Close);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    l->addWidget(bb);
+    dlg.exec();
+}
+
+// ============================================================================
+//  Innovation 2 : recommandation de certifications
+// ============================================================================
+// Pour un agent, détermine les certifications requises par son poste, sa
+// spécialité et son grade, puis propose la prochaine session disponible
+// (nom, lieu, date) pour celles qui manquent ou qui arrivent à échéance.
+QList<Recommandation> FireStation::recommandationsPour(const Agent &a) const
+{
+    const QDate today = QDate::currentDate();
+    const int g = int(GRADES.indexOf(a.grade));
+    const bool op = estOperationnel(a.poste);
+
+    // dernière certification connue portant ce nom
+    auto trouver = [&](const QString &nom) -> const Certification * {
+        const Certification *best = nullptr;
+        for (const Certification &c : a.certs)
+            if (c.nom.compare(nom, Qt::CaseInsensitive) == 0 && (!best || c.echeance > best->echeance))
+                best = &c;
+        return best;
+    };
+
+    // 1) certifications requises (nom, motif)
+    QList<QPair<QString, QString>> requises;
+    auto requiert = [&](const QString &cert, const QString &motif) {
+        for (const auto &r : requises) if (r.first == cert) return;
+        requises.append({cert, motif});
+    };
+    if (op)                            requiert(C_PSE1,  "obligatoire pour tout agent opérationnel");
+    if (a.poste == "Responsable RH")     requiert(C_PSE1,  "premiers secours pour tout le personnel");
+    if (a.poste == "Chauffeur")          requiert(C_COND,  "requise pour le poste Chauffeur");
+    if (a.poste == "Maître-chien")       requiert(C_CYNO,  "requise pour le poste Maître-chien");
+    if (a.poste == "Mécanicien")         requiert(C_MAINT, "requise pour le poste Mécanicien");
+    if (op) {
+        if (a.specialite == "Sauvetage-déblaiement") {
+            requiert(C_SD1, "spécialité Sauvetage-déblaiement");
+            if (trouver(C_SD1) && g >= GRADES.indexOf("Sergent"))
+                requiert(C_SD2, "évolution de carrière (grade " + a.grade + ")");
+        }
+        if (a.specialite == "Recherche cynophile")      requiert(C_CYNO, "spécialité Recherche cynophile");
+        if (a.specialite == "Risques chimiques (NRBC)") requiert(C_NRBC, "spécialité Risques chimiques");
+        if (a.specialite == "Secourisme")               requiert(C_PSE2, "spécialité Secourisme");
+        if (a.specialite == "Lutte contre l'incendie")  requiert(C_FDF,  "spécialité Lutte contre l'incendie");
+        if (g >= GRADES.indexOf("Adjudant"))
+            requiert(C_GOC, "requise à partir du grade Adjudant");
+    }
+
+    // 2) comparaison avec les certifications de l'agent + recherche de session
+    QList<Recommandation> out;
+    for (const auto &req : requises) {
+        Recommandation r;
+        r.agentId = a.id;
+        r.certification = req.first;
+        r.motif = req.second;
+
+        if (const Certification *c = trouver(req.first)) {
+            const int d = int(today.daysTo(c->echeance));
+            if (d > RENOUVELLEMENT_JOURS) continue;           // encore valable : rien à proposer
+            r.statut  = d < 0 ? QString("Expirée depuis %1 j").arg(-d) : QString("Expire dans %1 j").arg(d);
+            r.urgente = d <= ALERTE_JOURS;
+        } else {
+            r.statut  = "Manquante";
+            r.urgente = false;
+        }
+
+        // prochaine session à venir pour cette certification
+        for (int i = 0; i < m_sessions.size(); ++i) {
+            const SessionFormation &s = m_sessions[i];
+            if (s.certification != req.first || s.date < today) continue;
+            if (s.inscrits.contains(a.id)) { r.sessionIndex = i; r.inscrit = true; break; }
+            if (s.places <= 0) continue;
+            if (r.sessionIndex < 0 || s.date < m_sessions[r.sessionIndex].date) r.sessionIndex = i;
+        }
+        out.append(r);
+    }
+    return out;
+}
+
+void FireStation::inscrire(const QString &agentId, int sessionIndex)
+{
+    const int i = indexParId(agentId);
+    if (i < 0 || sessionIndex < 0 || sessionIndex >= m_sessions.size()) return;
+    SessionFormation &s = m_sessions[sessionIndex];
+    const Agent &a = m_agents[i];
+    if (s.places <= 0 || s.inscrits.contains(agentId)) return;
+
+    if (QMessageBox::question(this, "Inscription",
+                              QString("Inscrire %1 %2 à la formation :\n\n%3\n%4\nle %5 ?\n\n"
+                                      "Une convocation sera envoyée par SMS.")
+                                  .arg(a.nom, a.prenom, s.certification, s.lieu,
+                                       s.date.toString("dd/MM/yyyy")))
+        != QMessageBox::Yes) return;
+
+    s.inscrits << agentId;
+    --s.places;
+    envoyerSms(a.tel,
+               QString("USPC - Convocation : vous êtes inscrit(e) à la formation \"%1\" le %2, lieu : %3.")
+                   .arg(s.certification, s.date.toString("dd/MM/yyyy"), s.lieu),
+               a.nom + " " + a.prenom);
+    afficherFormations();       // rafraîchit la page
+    mettreAJourAlertes();
+}
+
+QWidget *FireStation::creerFormationsWidget()
+{
+    auto *root = new QWidget;
+    root->setObjectName("statsRoot");
+    auto *v = new QVBoxLayout(root);
+    v->setContentsMargins(24, 20, 24, 20);
+    v->setSpacing(14);
+
+    // --- en-tête
+    auto *head = new QHBoxLayout;
+    head->addLayout(enTetePage("Formations", "Formations et certifications recommandées",
+                               "Certifications à passer selon le poste, la spécialité et le grade de chaque agent"), 1);
+    auto *retour = new QPushButton("‹ Retour à la liste");
+    retour->setObjectName("retour");
+    head->addWidget(retour, 0, Qt::AlignTop);
+    v->addLayout(head);
+    connect(retour, &QPushButton::clicked, this, [this] { allerPage(0); });
+
+    // --- filtre par agent
+    auto *rf = new QHBoxLayout;
+    rf->addWidget(new QLabel("Agent :"));
+    auto *cb = new QComboBox;
+    cb->addItem("Tous les agents", QString());
+    for (const Agent &a : m_agents)
+        cb->addItem(QString("%1 — %2 %3").arg(a.id, a.nom, a.prenom), a.id);
+    const int sel = cb->findData(m_formFiltre);
+    cb->setCurrentIndex(sel < 0 ? 0 : sel);
+    rf->addWidget(cb);
+    rf->addStretch();
+    v->addLayout(rf);
+    connect(cb, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, cb](int) {
+        m_formFiltre = cb->currentData().toString();
+        QTimer::singleShot(0, this, [this] { afficherFormations(); });
+    });
+
+    // --- calcul des recommandations
+    QList<Recommandation> recos;
+    for (const Agent &a : m_agents) {
+        if (!m_formFiltre.isEmpty() && a.id != m_formFiltre) continue;
+        recos += recommandationsPour(a);
+    }
+    std::stable_sort(recos.begin(), recos.end(), [](const Recommandation &x, const Recommandation &y) {
+        if (x.inscrit != y.inscrit) return !x.inscrit;
+        return x.urgente && !y.urgente;
+    });
+    int nUrg = 0, nIns = 0, nAVenir = 0;
+    for (const Recommandation &r : recos) { if (r.urgente && !r.inscrit) ++nUrg; if (r.inscrit) ++nIns; }
+    for (const SessionFormation &s : m_sessions) if (s.date >= QDate::currentDate()) ++nAVenir;
+
+    auto *kp = new QHBoxLayout;
+    kp->setSpacing(12);
+    QList<QFrame *> kpis = {carteKpi(int(recos.size()) - nIns, "Certifications à planifier", "#b3211c", 100),
+                            carteKpi(nUrg, "Urgentes (échéance proche ou dépassée)", "#c46a00", 180),
+                            carteKpi(nIns, "Inscriptions effectuées", "#1e8e5a", 260),
+                            carteKpi(nAVenir, "Sessions à venir", "#2f6fb3", 340)};
+    for (int i = 0; i < kpis.size(); ++i) { kp->addWidget(kpis[i], 1); fondu(kpis[i], 400, 80 * i); }
+    v->addLayout(kp);
+
+    // --- tableau des recommandations
+    QVBoxLayout *lt = nullptr;
+    QFrame *cT = nouvelleCarte(&lt);
+    lt->addWidget(etiquette("Certifications proposées", "h3"));
+    lt->addWidget(etiquette("Pour chaque certification : nom, lieu et date de la prochaine session", "sous"));
+    lt->addSpacing(6);
+
+    auto *t = new QTableWidget(int(recos.size()), 7);
+    t->setHorizontalHeaderLabels({"AGENT", "CERTIFICATION", "MOTIF", "ÉTAT", "LIEU", "DATE", "ACTION"});
+    t->verticalHeader()->hide();
+    t->setShowGrid(false);
+    t->setMouseTracking(true);
+    t->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    t->setSelectionBehavior(QAbstractItemView::SelectRows);
+    t->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    t->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Stretch);
+    t->setWordWrap(true);
+
+    for (int r = 0; r < recos.size(); ++r) {
+        const Recommandation &rc = recos[r];
+        const Agent &a = m_agents[indexParId(rc.agentId)];
+        t->setRowHeight(r, 46);
+        t->setItem(r, 0, new QTableWidgetItem(a.nom + " " + a.prenom));
+        auto *ic = new QTableWidgetItem(rc.certification);
+        QFont bf = ic->font(); bf.setBold(true); ic->setFont(bf);
+        t->setItem(r, 1, ic);
+        auto *im = new QTableWidgetItem(rc.motif);
+        im->setForeground(QColor("#777777"));
+        t->setItem(r, 2, im);
+
+        auto *badge = new QLabel(rc.inscrit ? "Inscrit ✓" : rc.statut);
+        badge->setObjectName(rc.inscrit ? "badgeOk" : (rc.urgente ? "badgeUrgent" : "badgeNormal"));
+        auto *bw = new QWidget;
+        auto *bl = new QHBoxLayout(bw);
+        bl->setContentsMargins(4, 0, 4, 0);
+        bl->addWidget(badge);
+        bl->addStretch();
+        t->setCellWidget(r, 3, bw);
+
+        if (rc.sessionIndex >= 0) {
+            const SessionFormation &s = m_sessions[rc.sessionIndex];
+            t->setItem(r, 4, new QTableWidgetItem(s.lieu));
+            t->setItem(r, 5, new QTableWidgetItem(QString("%1  (%2 pl.)")
+                                                      .arg(s.date.toString("dd/MM/yyyy")).arg(s.places)));
+        } else {
+            auto *it = new QTableWidgetItem("Aucune session programmée");
+            it->setForeground(QColor("#999999"));
+            t->setItem(r, 4, it);
+            t->setItem(r, 5, new QTableWidgetItem("—"));
+        }
+
+        if (!rc.inscrit && rc.sessionIndex >= 0) {
+            auto *b = new QPushButton("Inscrire");
+            b->setObjectName("rouge");
+            b->setCursor(Qt::PointingHandCursor);
+            const QString id = rc.agentId;
+            const int si = rc.sessionIndex;
+            connect(b, &QPushButton::clicked, this, [this, id, si] { inscrire(id, si); });
+            auto *aw = new QWidget;
+            auto *al = new QHBoxLayout(aw);
+            al->setContentsMargins(4, 4, 4, 4);
+            al->addWidget(b);
+            t->setCellWidget(r, 6, aw);
+        }
+    }
+    if (recos.isEmpty())
+        lt->addWidget(etiquette("Aucune certification à proposer : les profils sont à jour.", "sous"));
+    else {
+        t->setMinimumHeight(std::min(560, 46 * int(recos.size()) + 40));
+        lt->addWidget(t);
+    }
+    v->addWidget(cT);
+
+    // --- catalogue des sessions
+    QVBoxLayout *lc = nullptr;
+    QFrame *cC = nouvelleCarte(&lc);
+    lc->addWidget(etiquette("Catalogue des sessions de formation", "h3"));
+    lc->addWidget(etiquette("Sessions programmées par les centres de formation de la Protection civile", "sous"));
+    lc->addSpacing(6);
+    QList<int> idx;
+    for (int i = 0; i < m_sessions.size(); ++i) idx << i;
+    std::sort(idx.begin(), idx.end(), [this](int x, int y) { return m_sessions[x].date < m_sessions[y].date; });
+    auto *tc = new QTableWidget(int(idx.size()), 5);
+    tc->setHorizontalHeaderLabels({"DATE", "CERTIFICATION", "LIEU", "PLACES RESTANTES", "INSCRITS"});
+    tc->verticalHeader()->hide();
+    tc->setShowGrid(false);
+    tc->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    tc->setSelectionMode(QAbstractItemView::NoSelection);
+    tc->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    tc->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    for (int r = 0; r < idx.size(); ++r) {
+        const SessionFormation &s = m_sessions[idx[r]];
+        tc->setRowHeight(r, 36);
+        tc->setItem(r, 0, new QTableWidgetItem(s.date.toString("dd/MM/yyyy")));
+        tc->setItem(r, 1, new QTableWidgetItem(s.certification));
+        tc->setItem(r, 2, new QTableWidgetItem(s.lieu));
+        tc->setItem(r, 3, new QTableWidgetItem(QString::number(s.places)));
+        QStringList noms;
+        for (const QString &id : s.inscrits) {
+            const int k = indexParId(id);
+            if (k >= 0) noms << m_agents[k].nom;
+        }
+        tc->setItem(r, 4, new QTableWidgetItem(noms.isEmpty() ? "—" : noms.join(", ")));
+    }
+    tc->setMinimumHeight(36 * int(idx.size()) + 40);
+    lc->addWidget(tc);
+    v->addWidget(cC);
+    v->addStretch();
+    return root;
+}
+
+void FireStation::afficherFormations()
+{
+    const bool dejaOuverte = pages->currentIndex() == 2;
+    formScroll->setWidget(creerFormationsWidget());
+    if (!dejaOuverte) allerPage(2);
 }
 
 // ============================================================================
@@ -1022,23 +1662,37 @@ void FireStation::exporterPdf()
                                                       "planning_garde.pdf", "PDF (*.pdf)");
     if (path.isEmpty()) return;
 
+    // Agents de garde : disponibles ou en intervention
+    QList<const Agent *> garde;
+    for (const Agent &a : m_agents)
+        if (a.dispo == "Disponible" || a.dispo == "En intervention") garde << &a;
+    std::stable_sort(garde.begin(), garde.end(), [](const Agent *x, const Agent *y) {
+        return GRADES.indexOf(x->grade) > GRADES.indexOf(y->grade);
+    });
+
     QString rows;
-    for (const Agent &a : m_agents) {
-        if (a.dispo == "Repos") continue;
-        rows += QString("<tr><td>%1 %2</td><td>%3</td><td>%4</td><td>%5</td><td>%6</td><td>%7</td></tr>")
-                    .arg(a.nom.toHtmlEscaped(), a.prenom.toHtmlEscaped(), a.fonction,
-                         a.grade.isEmpty() ? "—" : a.grade, a.tel, a.chef, a.dispo);
+    for (const Agent *a : garde) {
+        rows += QString("<tr><td>%1 %2</td><td>%3</td><td>%4</td><td>%5</td><td>%6</td></tr>")
+        .arg(a->nom.toHtmlEscaped(), a->prenom.toHtmlEscaped(), a->poste,
+             a->grade.isEmpty() ? "—" : a->grade, a->tel, a->dispo);
     }
     const QString html = QString(
-                             "<h2>Planning de garde — Caserne centrale</h2><p>Édité le %1</p>"
+                             "<table width='100%'><tr>"
+                             "<td width='90'><img src='logo' width='80' height='80'></td>"
+                             "<td><h2>Planning de garde</h2>"
+                             "<p>%1<br>Chef de caserne : %2 — Responsable RH : %3<br>Édité le %4</p></td>"
+                             "</tr></table><br>"
                              "<table border='1' cellspacing='0' cellpadding='5' width='100%'>"
-                             "<tr bgcolor='#dddddd'><th>Agent</th><th>Fonction</th><th>Grade</th>"
-                             "<th>Téléphone</th><th>Chef de caserne</th><th>Statut</th></tr>%2</table>")
-                             .arg(QDate::currentDate().toString("dd/MM/yyyy"), rows);
+                             "<tr bgcolor='#dddddd'><th>Agent</th><th>Poste</th><th>Grade</th>"
+                             "<th>Téléphone</th><th>Statut</th></tr>%5</table>")
+                             .arg(UNITE, ACTEUR_CHEF, ACTEUR_RH,
+                                  QDate::currentDate().toString("dd/MM/yyyy"), rows);
 
     QPdfWriter writer(path);
     writer.setPageSize(QPageSize(QPageSize::A4));
     QTextDocument doc;
+    doc.addResource(QTextDocument::ImageResource, QUrl("logo"),
+                    QImage(":/logo_USPC.png").scaled(240, 240, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     doc.setHtml(html);
     doc.print(&writer);
     QMessageBox::information(this, "Export", "Planning exporté :\n" + path);

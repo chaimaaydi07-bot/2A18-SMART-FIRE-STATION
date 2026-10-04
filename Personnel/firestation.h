@@ -2,7 +2,10 @@
 #include <QMainWindow>
 #include <QDate>
 #include <QList>
+#include <QSet>
 #include <QString>
+#include <QStringList>
+#include <functional>
 
 class QLineEdit;
 class QComboBox;
@@ -15,6 +18,7 @@ class QScrollArea;
 class QFrame;
 class QDateEdit;
 class QWidget;
+class QNetworkAccessManager;
 
 struct Certification {
     QString nom;
@@ -22,13 +26,34 @@ struct Certification {
     QDate   echeance;
 };
 
+// Agent de l'USPC
+// (Le Responsable RH et le Chef d'unité sont des ACTEURS de l'application,
+//  pas des attributs de l'agent : ils ne sont donc plus stockés ici.)
 struct Agent {
-    QString id, nom, prenom, fonction, grade, specialite, tel, dispo;
-    QString rh, chef;               // affectés automatiquement (non saisis à l'ajout)
+    QString id, nom, prenom, poste, grade, specialite, tel, dispo;
     QList<Certification> certs;
-    int interv48 = 0;               // interventions sur les dernières 48 h
-    int reposH   = 24;              // heures de repos depuis la dernière garde
-    int mois     = 0;               // interventions sur les 30 derniers jours
+    int mois = 0;                   // interventions sur les 30 derniers jours (statistiques)
+};
+
+// Session de formation proposée par un centre (catalogue des formations)
+struct SessionFormation {
+    QString     id;
+    QString     certification;      // nom de la certification délivrée
+    QString     lieu;
+    QDate       date;
+    int         places = 0;         // places restantes
+    QStringList inscrits;           // id des agents inscrits
+};
+
+// Une recommandation calculée pour un agent
+struct Recommandation {
+    QString agentId;
+    QString certification;
+    QString motif;                  // pourquoi elle est proposée (poste, spécialité, grade)
+    QString statut;                 // « Manquante », « Expire dans 12 j », « Expirée »
+    bool    urgente = false;
+    bool    inscrit = false;        // l'agent est déjà inscrit à la session
+    int     sessionIndex = -1;      // index dans m_sessions (-1 = aucune session programmée)
 };
 
 // Une ligne de saisie de certification dans le formulaire
@@ -49,19 +74,23 @@ private slots:
     void ajouter();
     void modifier();
     void reinitialiser();
-    void onFonctionChanged();
+    void onPosteChanged();
     void rafraichir();
     void exporterPdf();
     void afficherStats();
     void exporterStatsPdf();
+    void afficherFormations();
+    void afficherJournalSms();
 
 private:
     QWidget *creerSidebar();
     QWidget *creerFormulaire();
     QWidget *creerListe();
     QWidget *creerStatsWidget();
+    QWidget *creerFormationsWidget();
 
     void chargerDonnees();
+    void chargerSessions();
     bool lireFormulaire(Agent &a, QString &erreur);
     QString nouvelId() const;
     int indexParId(const QString &id) const;
@@ -74,22 +103,40 @@ private:
     void retirerCert(QFrame *frame);
     void viderCerts();
     void mettreAJourAlertes();
-    void ajouterAlerte(const QString &titre, const QString &detail,
-                       bool info, const QString &idAgent);
+    void ajouterAlerte(const QString &titre, const QString &detail, bool info,
+                       const QString &idAgent, const QString &actionTxt = QString(),
+                       std::function<void()> action = nullptr);
 
-    QList<Agent> m_agents;
-    QString      m_editingId;
+    // Navigation animée entre les pages
+    void allerPage(int index);
+
+    // Innovation 1 : SMS de renouvellement des certifications
+    void envoyerSms(const QString &tel, const QString &message, const QString &destinataire);
+    void verifierEcheancesSms();           // envoi automatique
+    QString cleSms(const Agent &a, const Certification &c) const;
+
+    // Innovation 2 : recommandation de certifications
+    QList<Recommandation> recommandationsPour(const Agent &a) const;
+    void inscrire(const QString &agentId, int sessionIndex);
+
+    QList<Agent>            m_agents;
+    QList<SessionFormation> m_sessions;
+    QString                 m_editingId;
+    QSet<QString>           m_smsEnvoyes;   // certifications déjà notifiées par SMS
+    QStringList             m_journalSms;   // historique des SMS
+    QNetworkAccessManager  *m_net = nullptr;
 
     // navigation
     QStackedWidget *pages = nullptr;
-    QScrollArea    *statsScroll = nullptr;
+    QScrollArea    *statsScroll = nullptr, *formScroll = nullptr;
     QWidget        *m_statsContent = nullptr;
     QPushButton    *m_btnStatsRetour = nullptr, *m_btnStatsExport = nullptr;
     QPushButton    *navPersonnel = nullptr;
+    QString         m_formFiltre;   // agent sélectionné sur la page Formations
 
     // formulaire
     QLabel       *lblFormTitle = nullptr;
-    QComboBox    *cbFonction = nullptr, *cbGrade = nullptr, *cbSpec = nullptr, *cbDispo = nullptr;
+    QComboBox    *cbPoste = nullptr, *cbGrade = nullptr, *cbSpec = nullptr, *cbDispo = nullptr;
     QLineEdit    *edNom = nullptr, *edPrenom = nullptr, *edTel = nullptr;
     QVBoxLayout  *certsLayout = nullptr;
     QList<CertRow> m_certRows;
@@ -97,7 +144,7 @@ private:
     QPushButton  *btnAjouter = nullptr, *btnModifier = nullptr;
 
     // liste
-    QComboBox    *cbTri = nullptr, *cbFiltreFonction = nullptr;
+    QComboBox    *cbTri = nullptr, *cbFiltrePoste = nullptr;
     QLineEdit    *edRecherche = nullptr;
     QTableWidget *tblAgents = nullptr;
     QVBoxLayout  *alertesLayout = nullptr;

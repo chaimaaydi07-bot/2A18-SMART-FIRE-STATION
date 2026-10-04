@@ -1,13 +1,16 @@
-QT += widgets
+QT += widgets network
 
 CONFIG += c++17
 
+TARGET = FireStation
+
 SOURCES += \
     main.cpp \
-    firestation.cpp
+    firestation.cpp \
+    splashscreen.cpp
 
 HEADERS += \
-    firestation.h
+    firestation.h \
+    splashscreen.h
 
-RESOURCES += ressources.qrc \
-    ressources.qrc
+RESOURCES += ressources.qrc
