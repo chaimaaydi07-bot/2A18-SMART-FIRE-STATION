@@ -49,9 +49,6 @@ namespace {
 // ----------------------------------------------------------------------------
 const QString UNITE    = "Unité Spéciale de la Protection Civile (USPC)";
 
-// Acteurs de l'application (utilisateurs, pas des attributs de l'agent)
-const QString ACTEUR_RH   = "Mansouri Leila";   // Responsable RH
-const QString ACTEUR_CHEF = "Trabelsi Sami";    // Chef de caserne
 
 const int ALERTE_JOURS        = 30;  // SMS + alerte : X jours avant l'échéance
 const int RENOUVELLEMENT_JOURS = 90; // une formation est proposée X jours avant l'échéance
@@ -70,7 +67,8 @@ const QString SMS_EXPEDITEUR  = "";   // numéro fourni par le fournisseur, ex. 
 //  Listes de valeurs adaptées à l'USPC
 // ----------------------------------------------------------------------------
 const QStringList POSTES = {"Pompier", "Chauffeur", "Maître-chien", "Secouriste",
-                            "Mécanicien", "Administratif", "Responsable RH", "Chef de caserne"};
+                            "Mécanicien", "Administratif", "Dispatcher",
+                            "Responsable des équipements", "Responsable RH", "Chef de caserne"};
 const QStringList POSTES_OPERATIONNELS = {"Pompier", "Chauffeur", "Maître-chien",
                                           "Secouriste", "Chef de caserne"};
 const QStringList GRADES = {"Agent", "Caporal", "Sergent", "Adjudant", "Lieutenant", "Capitaine"};
@@ -90,6 +88,19 @@ const QString C_COND  = "Conduite d'engins d'intervention";
 const QString C_MAINT = "Maintenance des véhicules d'intervention";
 const QString C_FDF   = "Lutte contre l'incendie (FDF)";
 const QString C_GOC   = "Gestion opérationnelle et commandement (GOC)";
+
+// ----------------------------------------------------------------------------
+//  Droits d'accès : modules autorisés pour chaque rôle (= poste)
+//  Pour ajouter un module validé plus tard, il suffit de l'ajouter ici.
+// ----------------------------------------------------------------------------
+const QStringList MODULES = {"Incidents", "Véhicules", "Équipements", "Personnel"};
+const QMap<QString, QStringList> ACCES = {
+    {"Chef de caserne",             {"Incidents", "Véhicules", "Équipements", "Personnel"}},
+    {"Dispatcher",                  {"Incidents"}},
+    {"Mécanicien",                  {"Véhicules"}},
+    {"Responsable des équipements", {"Équipements"}},
+    {"Responsable RH",              {"Personnel"}},
+    };
 
 bool estOperationnel(const QString &poste) { return POSTES_OPERATIONNELS.contains(poste); }
 bool aUnGrade(const QString &poste)        { return poste != "Administratif"; }
@@ -357,6 +368,10 @@ QMainWindow, #main { background: #f4f2ef; }
 #sidebar QPushButton:checked { background: rgba(255,255,255,0.22); font-weight: bold;
     border-left: 4px solid #f2a10c; }
 #sidebar QLabel#acteur { color: rgba(255,255,255,0.85); font-size: 12px; padding: 0 22px; }
+#sidebar QPushButton#deco { color: white; border: 1px solid rgba(255,255,255,0.6); border-radius: 6px;
+    margin: 10px 22px 0 22px; padding: 7px; text-align: center; font-size: 13px; }
+#sidebar QPushButton#deco:hover { background: rgba(255,255,255,0.18); }
+#aVenir { font-size: 18px; color: #777; }
 #logo { background: white; border-radius: 75px; }
 #titre { font-size: 26px; font-weight: bold; color: #222; }
 #sous { color: #777; }
@@ -471,6 +486,12 @@ FireStation::FireStation(QWidget *parent) : QMainWindow(parent)
     formScroll->setFrameShape(QFrame::NoFrame);
     pages->addWidget(formScroll);
 
+    // Page 3 : module d'un coéquipier (affiché après l'intégration)
+    lblAVenir = new QLabel;
+    lblAVenir->setObjectName("aVenir");
+    lblAVenir->setAlignment(Qt::AlignCenter);
+    pages->addWidget(lblAVenir);
+
     root->addWidget(pages, 1);
     setCentralWidget(central);
     statusBar()->showMessage(SMS_ACCOUNT_SID.isEmpty()
@@ -510,29 +531,39 @@ QWidget *FireStation::creerSidebar()
     l->addWidget(logo, 0, Qt::AlignHCenter);
     l->addSpacing(20);
 
-    const QStringList items = {"Tableau de bord", "Incidents", "Interventions", "Personnel",
-                               "Véhicules", "Équipements", "Rapports"};
-    for (const QString &t : items) {
+    // Un bouton par module validé ; ils sont affichés ou masqués selon le rôle
+    for (const QString &t : MODULES) {
         auto *b = new QPushButton(t);
         b->setCheckable(true);
         b->setAutoExclusive(true);
         b->setChecked(t == "Personnel");
         b->setCursor(Qt::PointingHandCursor);
         if (t == "Personnel") navPersonnel = b;
+        else connect(b, &QPushButton::clicked, this, [this, t] {
+                lblAVenir->setText(QString("Module %1\n\n(ajouté lors de l'intégration)").arg(t));
+                allerPage(3);
+            });
+        m_boutonsModules.insert(t, b);
         l->addWidget(b);
     }
     l->addStretch();
 
-    // Acteur connecté (Responsable RH)
-    auto *act = new QLabel(QString("Connecté :<br><b>%1</b><br>Responsable RH").arg(ACTEUR_RH));
-    act->setObjectName("acteur");
-    l->addWidget(act);
+    // Utilisateur connecté + déconnexion
+    lblActeur = new QLabel;
+    lblActeur->setObjectName("acteur");
+    l->addWidget(lblActeur);
+    auto *btnDeco = new QPushButton("Se déconnecter");
+    btnDeco->setObjectName("deco");
+    btnDeco->setCursor(Qt::PointingHandCursor);
+    connect(btnDeco, &QPushButton::clicked, this, &FireStation::deconnexion);
+    l->addWidget(btnDeco);
     return side;
 }
 
 QWidget *FireStation::creerFormulaire()
 {
     auto *card = new QFrame;
+    m_carteFormulaire = card;
     card->setObjectName("card");
     card->setFixedWidth(350);
     auto *l = new QVBoxLayout(card);
@@ -583,6 +614,12 @@ QWidget *FireStation::creerFormulaire()
     edTel = new QLineEdit;
     edTel->setPlaceholderText("+216 20 123 456");
     l->addWidget(edTel);
+
+    champ("Mot de passe (si l'agent utilise l'application)");
+    edMdp = new QLineEdit;
+    edMdp->setEchoMode(QLineEdit::Password);
+    edMdp->setPlaceholderText("Laisser vide pour ne pas changer");
+    l->addWidget(edMdp);
 
     champ("Disponibilité");
     cbDispo = new QComboBox;
@@ -863,6 +900,71 @@ void FireStation::chargerDonnees()
        {{C_PSE1, t.addDays(-150), t.addDays(200)}, {C_NRBC, t.addDays(-370), t.addDays(-5)}}, 4);
     ag("AGT-021", "Ben Salah", "Walid", "Chauffeur", "Agent", "Lutte contre l'incendie",
        "+216 53 555 666", "En congé", {}, 8);
+    ag("AGT-023", "Mejri", "Khaled", "Dispatcher", "Sergent", "",
+       "+216 58 444 777", "Disponible", {}, 0);
+    ag("AGT-024", "Ferchichi", "Sonia", "Responsable des équipements", "Adjudant", "",
+       "+216 97 222 888", "Disponible", {}, 0);
+
+    // Comptes de démonstration (mots de passe chiffrés, jamais stockés en clair)
+    const QMap<QString, QString> mdpDemo = {
+        {"AGT-018", "rh2026"},       // Responsable RH
+        {"AGT-015", "chef2026"},     // Chef de caserne
+        {"AGT-023", "disp2026"},     // Dispatcher
+        {"AGT-016", "meca2026"},     // Mécanicien
+        {"AGT-024", "equip2026"},    // Responsable des équipements
+    };
+    for (Agent &a : m_agents)
+        if (mdpDemo.contains(a.id)) a.mdpHash = PageConnexion::hacher(mdpDemo.value(a.id));
+}
+
+// ============================================================================
+//  Authentification : comptes et droits d'accès
+// ============================================================================
+QList<Compte> FireStation::comptes() const
+{
+    QList<Compte> liste;
+    for (const Agent &a : m_agents)
+        if (!a.mdpHash.isEmpty())
+            liste.append({a.id, a.nom + " " + a.prenom, a.poste, a.mdpHash});
+    return liste;
+}
+
+void FireStation::majUtilisateurConnecte()
+{
+    // Le nom est relu dans la liste des agents : s'il est modifié, le menu suit
+    const int i = indexParId(m_idConnecte);
+    if (i < 0) return;
+    const Agent &a = m_agents[i];
+    lblActeur->setText(QString("Connecté :<br><b>%1</b><br>%2")
+                           .arg((a.nom + " " + a.prenom).toHtmlEscaped(), m_roleConnecte));
+}
+
+void FireStation::appliquerRole(const QString &identifiant, const QString &nom, const QString &role)
+{
+    m_idConnecte = identifiant;
+    m_roleConnecte = role;
+    lblActeur->setText(QString("Connecté :<br><b>%1</b><br>%2").arg(nom.toHtmlEscaped(), role));
+
+    // Menu : seuls les modules autorisés pour ce rôle sont visibles
+    const QStringList autorises = ACCES.value(role);
+    QPushButton *premier = nullptr;
+    for (const QString &m : MODULES) {
+        QPushButton *b = m_boutonsModules.value(m);
+        b->setVisible(autorises.contains(m));
+        if (!premier && autorises.contains(m)) premier = b;
+    }
+
+    // Module Personnel : le Responsable RH gère, les autres rôles consultent seulement
+    m_lectureSeule = role != "Responsable RH";
+    m_carteFormulaire->setVisible(!m_lectureSeule);
+    reinitialiser();
+    rafraichir();
+
+    if (premier) { premier->setChecked(true); premier->click(); }
+    else {
+        lblAVenir->setText("Aucun module n'est autorisé pour ce rôle.");
+        allerPage(3);
+    }
 }
 
 // Catalogue des sessions de formation (Innovation 2)
@@ -1006,6 +1108,11 @@ bool FireStation::lireFormulaire(Agent &a, QString &erreur)
     if (!QRegularExpression("^\\+?[0-9 ]{8,15}$").match(a.tel).hasMatch()) {
         erreur = "Numéro de téléphone invalide (nécessaire pour les SMS)."; return false;
     }
+    const QString mdp = edMdp->text();
+    if (!mdp.isEmpty() && mdp.size() < 6) {
+        erreur = "Le mot de passe doit contenir au moins 6 caractères."; return false;
+    }
+    a.mdpHash = mdp.isEmpty() ? QString() : PageConnexion::hacher(mdp);   // jamais stocké en clair
 
     a.certs.clear();
     for (const CertRow &r : m_certRows) {
@@ -1043,6 +1150,7 @@ void FireStation::modifier()
     Agent &old = m_agents[i];
     old.nom = a.nom; old.prenom = a.prenom; old.poste = a.poste; old.grade = a.grade;
     old.specialite = a.specialite; old.tel = a.tel; old.dispo = a.dispo; old.certs = a.certs;
+    if (!a.mdpHash.isEmpty()) old.mdpHash = a.mdpHash;   // mot de passe vide = inchangé
     reinitialiser();
     verifierEcheancesSms();
     rafraichir();
@@ -1052,7 +1160,7 @@ void FireStation::reinitialiser()
 {
     m_editingId.clear();
     lblFormTitle->setText("＋ Nouvel agent");
-    edNom->clear(); edPrenom->clear(); edTel->clear();
+    edNom->clear(); edPrenom->clear(); edTel->clear(); edMdp->clear();
     cbPoste->setCurrentIndex(0);
     cbGrade->setCurrentIndex(0);
     cbSpec->setCurrentIndex(0);
@@ -1128,6 +1236,11 @@ void FireStation::consulter(const QString &id)
 
 void FireStation::supprimer(const QString &id)
 {
+    if (id == m_idConnecte) {
+        QMessageBox::warning(this, "Supprimer",
+                             "Vous ne pouvez pas supprimer votre propre compte pendant que vous êtes connecté.");
+        return;
+    }
     if (QMessageBox::question(this, "Supprimer", "Supprimer l'agent " + id + " ?")
         != QMessageBox::Yes) return;
     const int i = indexParId(id);
@@ -1189,10 +1302,13 @@ void FireStation::rafraichir()
             return b;
         };
         connect(mk("Voir", "Consulter"),    &QToolButton::clicked, this, [this, id] { consulter(id); });
-        connect(mk("Modifier", "Modifier"), &QToolButton::clicked, this, [this, id] { chargerDansFormulaire(id); });
-        connect(mk("Suppr.", "Supprimer"),  &QToolButton::clicked, this, [this, id] { supprimer(id); });
+        if (!m_lectureSeule) {   // modification réservée au Responsable RH
+            connect(mk("Modifier", "Modifier"), &QToolButton::clicked, this, [this, id] { chargerDansFormulaire(id); });
+            connect(mk("Suppr.", "Supprimer"),  &QToolButton::clicked, this, [this, id] { supprimer(id); });
+        }
         tblAgents->setCellWidget(r, 6, w);
     }
+    majUtilisateurConnecte();
     mettreAJourAlertes();
 }
 
@@ -1586,7 +1702,7 @@ QWidget *FireStation::creerFormationsWidget()
             t->setItem(r, 5, new QTableWidgetItem("—"));
         }
 
-        if (!rc.inscrit && rc.sessionIndex >= 0) {
+        if (!rc.inscrit && rc.sessionIndex >= 0 && !m_lectureSeule) {
             auto *b = new QPushButton("Inscrire");
             b->setObjectName("rouge");
             b->setCursor(Qt::PointingHandCursor);
@@ -1670,6 +1786,13 @@ void FireStation::exporterPdf()
         return GRADES.indexOf(x->grade) > GRADES.indexOf(y->grade);
     });
 
+    // Noms lus dans la liste des agents (mis à jour après modification ou suppression)
+    QString chef = "—", rh = "—";
+    for (const Agent &ag : m_agents) {
+        if (ag.poste == "Chef de caserne" && chef == "—") chef = ag.nom + " " + ag.prenom;
+        if (ag.poste == "Responsable RH" && rh == "—")   rh   = ag.nom + " " + ag.prenom;
+    }
+
     QString rows;
     for (const Agent *a : garde) {
         rows += QString("<tr><td>%1 %2</td><td>%3</td><td>%4</td><td>%5</td><td>%6</td></tr>")
@@ -1685,7 +1808,7 @@ void FireStation::exporterPdf()
                              "<table border='1' cellspacing='0' cellpadding='5' width='100%'>"
                              "<tr bgcolor='#dddddd'><th>Agent</th><th>Poste</th><th>Grade</th>"
                              "<th>Téléphone</th><th>Statut</th></tr>%5</table>")
-                             .arg(UNITE, ACTEUR_CHEF, ACTEUR_RH,
+                             .arg(UNITE, chef, rh,
                                   QDate::currentDate().toString("dd/MM/yyyy"), rows);
 
     QPdfWriter writer(path);

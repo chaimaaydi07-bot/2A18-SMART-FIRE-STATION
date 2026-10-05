@@ -5,7 +5,9 @@
 #include <QSet>
 #include <QString>
 #include <QStringList>
+#include <QMap>
 #include <functional>
+#include "pageconnexion.h"
 
 class QLineEdit;
 class QComboBox;
@@ -27,12 +29,13 @@ struct Certification {
 };
 
 // Agent de l'USPC
-// (Le Responsable RH et le Chef d'unité sont des ACTEURS de l'application,
-//  pas des attributs de l'agent : ils ne sont donc plus stockés ici.)
+// Les utilisateurs de l'application sont des agents qui ont un mot de passe ;
+// leur rôle (droits d'accès) correspond à leur poste.
 struct Agent {
     QString id, nom, prenom, poste, grade, specialite, tel, dispo;
     QList<Certification> certs;
     int mois = 0;                   // interventions sur les 30 derniers jours (statistiques)
+    QString mdpHash;                // mot de passe chiffré (vide = n'utilise pas l'application)
 };
 
 // Session de formation proposée par un centre (catalogue des formations)
@@ -69,6 +72,14 @@ class FireStation : public QMainWindow
     Q_OBJECT
 public:
     explicit FireStation(QWidget *parent = nullptr);
+
+    // Authentification
+    QList<Compte> comptes() const;                                // agents ayant un mot de passe
+    void appliquerRole(const QString &identifiant, const QString &nom,
+                       const QString &role);                      // adapte le menu et les droits
+
+signals:
+    void deconnexion();
 
 private slots:
     void ajouter();
@@ -137,7 +148,8 @@ private:
     // formulaire
     QLabel       *lblFormTitle = nullptr;
     QComboBox    *cbPoste = nullptr, *cbGrade = nullptr, *cbSpec = nullptr, *cbDispo = nullptr;
-    QLineEdit    *edNom = nullptr, *edPrenom = nullptr, *edTel = nullptr;
+    QLineEdit    *edNom = nullptr, *edPrenom = nullptr, *edTel = nullptr, *edMdp = nullptr;
+    QFrame       *m_carteFormulaire = nullptr;
     QVBoxLayout  *certsLayout = nullptr;
     QList<CertRow> m_certRows;
     QLabel       *lblErreur = nullptr;
@@ -148,4 +160,13 @@ private:
     QLineEdit    *edRecherche = nullptr;
     QTableWidget *tblAgents = nullptr;
     QVBoxLayout  *alertesLayout = nullptr;
+
+    // droits d'accès
+    QLabel       *lblActeur = nullptr;
+    QLabel       *lblAVenir = nullptr;
+    QMap<QString, QPushButton *> m_boutonsModules;
+    bool          m_lectureSeule = false;   // true = consultation uniquement
+    QString       m_idConnecte;             // ID de l'agent connecté
+    QString       m_roleConnecte;           // rôle de l'agent connecté
+    void          majUtilisateurConnecte(); // met à jour le nom affiché dans le menu
 };

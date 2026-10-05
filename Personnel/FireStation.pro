@@ -7,10 +7,10 @@ TARGET = FireStation
 SOURCES += \
     main.cpp \
     firestation.cpp \
-    splashscreen.cpp
+    pageconnexion.cpp
 
 HEADERS += \
     firestation.h \
-    splashscreen.h
+    pageconnexion.h
 
 RESOURCES += ressources.qrc
