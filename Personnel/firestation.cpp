@@ -8,6 +8,7 @@
 #include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFontMetrics>
+#include <QFormLayout>
 #include <QFrame>
 #include <QGraphicsOpacityEffect>
 #include <QGridLayout>
@@ -19,9 +20,6 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QMovie>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QNetworkRequest>
 #include <QPageLayout>
 #include <QPageSize>
 #include <QPainter>
@@ -31,6 +29,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
+#include <QSpinBox>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QTableWidget>
@@ -52,16 +51,6 @@ const QString UNITE    = "Unité Spéciale de la Protection Civile (USPC)";
 
 const int ALERTE_JOURS        = 30;  // SMS + alerte : X jours avant l'échéance
 const int RENOUVELLEMENT_JOURS = 90; // une formation est proposée X jours avant l'échéance
-
-// ----------------------------------------------------------------------------
-//  Configuration SMS (Innovation 1)
-//  Laisser SMS_ACCOUNT_SID vide = mode SIMULATION (les SMS sont seulement
-//  enregistrés dans le journal). Pour envoyer de vrais SMS, créer un compte
-//  Twilio (ou un fournisseur tunisien équivalent) et remplir ces 3 valeurs.
-// ----------------------------------------------------------------------------
-const QString SMS_ACCOUNT_SID = "";
-const QString SMS_AUTH_TOKEN  = "";
-const QString SMS_EXPEDITEUR  = "";   // numéro fourni par le fournisseur, ex. "+1415..."
 
 // ----------------------------------------------------------------------------
 //  Listes de valeurs adaptées à l'USPC
@@ -427,7 +416,6 @@ FireStation::FireStation(QWidget *parent) : QMainWindow(parent)
     setWindowTitle("USPC — Gestion du personnel");
     setWindowIcon(QIcon(":/logo_USPC.png"));
     setStyleSheet(STYLE);
-    m_net = new QNetworkAccessManager(this);
     chargerDonnees();
     chargerSessions();
 
@@ -494,9 +482,7 @@ FireStation::FireStation(QWidget *parent) : QMainWindow(parent)
 
     root->addWidget(pages, 1);
     setCentralWidget(central);
-    statusBar()->showMessage(SMS_ACCOUNT_SID.isEmpty()
-                                 ? "SMS : mode simulation (voir le Journal SMS)"
-                                 : "SMS : envoi réel activé");
+    statusBar()->showMessage("SMS : mode simulation (voir le Journal SMS)");
 
     connect(btnPdf,   &QPushButton::clicked, this, &FireStation::exporterPdf);
     connect(btnStats, &QPushButton::clicked, this, &FireStation::afficherStats);
@@ -904,6 +890,18 @@ void FireStation::chargerDonnees()
        "+216 58 444 777", "Disponible", {}, 0);
     ag("AGT-024", "Ferchichi", "Sonia", "Responsable des équipements", "Adjudant", "",
        "+216 97 222 888", "Disponible", {}, 0);
+    ag("AGT-025", "Dridi", "Youssef", "Pompier", "Adjudant", "Lutte contre l'incendie",
+       "+216 21 600 111", "Disponible",
+       {{C_PSE1, t.addDays(-90), t.addDays(275)}, {C_FDF, t.addDays(-120), t.addDays(245)}}, 12);
+    ag("AGT-026", "Khelifi", "Anis", "Chauffeur", "Caporal", "Sauvetage-déblaiement",
+       "+216 24 700 222", "Disponible",
+       {{C_PSE1, t.addDays(-60), t.addDays(305)}, {C_COND, t.addDays(-200), t.addDays(165)}}, 10);
+    ag("AGT-027", "Hamdi", "Ines", "Secouriste", "Agent", "Secourisme",
+       "+216 26 800 333", "Disponible",
+       {{C_PSE1, t.addDays(-30), t.addDays(335)}, {C_PSE2, t.addDays(-30), t.addDays(335)}}, 7);
+    ag("AGT-028", "Saidi", "Bilel", "Pompier", "Caporal", "Sauvetage-déblaiement",
+       "+216 29 900 444", "Disponible",
+       {{C_PSE1, t.addDays(-45), t.addDays(320)}, {C_SD1, t.addDays(-45), t.addDays(320)}}, 9);
 
     // Comptes de démonstration (mots de passe chiffrés, jamais stockés en clair)
     const QMap<QString, QString> mdpDemo = {
@@ -925,7 +923,7 @@ QList<Compte> FireStation::comptes() const
     QList<Compte> liste;
     for (const Agent &a : m_agents)
         if (!a.mdpHash.isEmpty())
-            liste.append({a.id, a.nom + " " + a.prenom, a.poste, a.mdpHash});
+            liste.append({a.id, a.nom + " " + a.prenom, a.poste, a.mdpHash, a.tel});
     return liste;
 }
 
@@ -1435,39 +1433,23 @@ void FireStation::verifierEcheancesSms()
     }
 }
 
+// Envoi d'un SMS en mode simulation : le message est enregistré dans le Journal SMS.
+// (Pour un envoi réel, il suffirait de remplacer le contenu de cette fonction
+//  par l'appel au service SMS d'un opérateur.)
 void FireStation::envoyerSms(const QString &tel, const QString &message, const QString &destinataire)
 {
     QString numero = tel;
     numero.remove(' ');
     const QString horodatage = QDateTime::currentDateTime().toString("dd/MM/yyyy HH:mm");
+    m_journalSms.prepend(QString("[%1] → %2 (%3) : %4").arg(horodatage, destinataire, numero, message));
+    statusBar()->showMessage(QString("SMS simulé envoyé à %1 (%2)").arg(destinataire, numero), 5000);
+}
 
-    // --- Mode simulation : aucun fournisseur configuré
-    if (SMS_ACCOUNT_SID.isEmpty()) {
-        m_journalSms.prepend(QString("[%1] (simulation) → %2 (%3) : %4")
-                                 .arg(horodatage, destinataire, numero, message));
-        statusBar()->showMessage(QString("SMS simulé envoyé à %1 (%2)").arg(destinataire, numero), 5000);
-        return;
-    }
-
-    // --- Mode réel : API Twilio (https://www.twilio.com/docs/messaging/api)
-    QNetworkRequest req(QUrl(QString("https://api.twilio.com/2010-04-01/Accounts/%1/Messages.json")
-                                 .arg(SMS_ACCOUNT_SID)));
-    req.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
-    req.setRawHeader("Authorization",
-                     "Basic " + QString("%1:%2").arg(SMS_ACCOUNT_SID, SMS_AUTH_TOKEN).toUtf8().toBase64());
-    const QByteArray corps = "To="     + QUrl::toPercentEncoding(numero)
-                             + "&From="  + QUrl::toPercentEncoding(SMS_EXPEDITEUR)
-                             + "&Body="  + QUrl::toPercentEncoding(message);
-    QNetworkReply *rep = m_net->post(req, corps);
-    connect(rep, &QNetworkReply::finished, this, [this, rep, horodatage, destinataire, numero, message] {
-        const bool ok = rep->error() == QNetworkReply::NoError;
-        m_journalSms.prepend(QString("[%1] %2 → %3 (%4) : %5")
-                                 .arg(horodatage, ok ? "envoyé" : "ÉCHEC (" + rep->errorString() + ")",
-                                      destinataire, numero, message));
-        statusBar()->showMessage(ok ? "SMS envoyé à " + destinataire
-                                    : "Échec de l'envoi du SMS à " + destinataire, 5000);
-        rep->deleteLater();
-    });
+// Réinitialisation du mot de passe depuis la page de connexion (code reçu par SMS)
+void FireStation::changerMotDePasse(const QString &identifiant, const QString &mdpHash)
+{
+    const int i = indexParId(identifiant);
+    if (i >= 0) m_agents[i].mdpHash = mdpHash;
 }
 
 void FireStation::afficherJournalSms()
@@ -1476,9 +1458,7 @@ void FireStation::afficherJournalSms()
     dlg.setWindowTitle("Journal des SMS");
     dlg.resize(720, 400);
     auto *l = new QVBoxLayout(&dlg);
-    l->addWidget(etiquette(SMS_ACCOUNT_SID.isEmpty()
-                               ? "Mode simulation : configurez un fournisseur SMS dans firestation.cpp pour un envoi réel."
-                               : "Envoi réel activé.", "sous"));
+    l->addWidget(etiquette("Mode simulation : les SMS sont enregistrés dans ce journal.", "sous"));
     auto *liste = new QListWidget;
     liste->setWordWrap(true);
     liste->setAlternatingRowColors(true);
@@ -1774,49 +1754,194 @@ void FireStation::afficherFormations()
 // ============================================================================
 void FireStation::exporterPdf()
 {
-    const QString path = QFileDialog::getSaveFileName(this, "Exporter le planning de garde",
-                                                      "planning_garde.pdf", "PDF (*.pdf)");
+    // 1) Choix de la semaine et du nombre d'agents par garde
+    QDialog dlg(this);
+    dlg.setWindowTitle("Planning de garde hebdomadaire");
+    auto *form = new QFormLayout(&dlg);
+    const QDate auj = QDate::currentDate();
+    auto *deSemaine = new QDateEdit(auj.addDays(8 - auj.dayOfWeek()));   // lundi prochain
+    deSemaine->setCalendarPopup(true);
+    deSemaine->setDisplayFormat("dd/MM/yyyy");
+    auto *sbNombre = new QSpinBox;
+    sbNombre->setRange(1, 8);
+    sbNombre->setValue(3);
+    form->addRow("Semaine du :", deSemaine);
+    form->addRow("Agents par garde :", sbNombre);
+    auto *aide = new QLabel("Le planning commence le lundi de la semaine choisie.\n"
+                            "Chaque jour : garde de jour (08h-20h) et garde de nuit (20h-08h).");
+    aide->setStyleSheet("color:#777;");
+    form->addRow(aide);
+    auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    form->addRow(bb);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    const QDate lundi = deSemaine->date().addDays(1 - deSemaine->date().dayOfWeek());
+    const QString path = QFileDialog::getSaveFileName(
+        this, "Exporter le planning de garde",
+        QString("planning_garde_%1.pdf").arg(lundi.toString("yyyy-MM-dd")), "PDF (*.pdf)");
     if (path.isEmpty()) return;
 
-    // Agents de garde : disponibles ou en intervention
-    QList<const Agent *> garde;
-    for (const Agent &a : m_agents)
-        if (a.dispo == "Disponible" || a.dispo == "En intervention") garde << &a;
-    std::stable_sort(garde.begin(), garde.end(), [](const Agent *x, const Agent *y) {
-        return GRADES.indexOf(x->grade) > GRADES.indexOf(y->grade);
-    });
+    if (genererPlanningPdf(path, lundi, sbNombre->value()))
+        QMessageBox::information(this, "Export", "Planning exporté :\n" + path);
+}
 
-    // Noms lus dans la liste des agents (mis à jour après modification ou suppression)
+// Construit le planning de la semaine par rotation et l'exporte en PDF.
+// Règles : un gradé (Sergent ou plus) par garde, un chauffeur si possible,
+// pas deux gardes consécutives, agents en congé ou en formation exclus,
+// et répartition équitable (on choisit d'abord ceux qui ont le moins de gardes).
+bool FireStation::genererPlanningPdf(const QString &chemin, QDate debut, int agentsParGarde)
+{
+    // --- Agents pouvant être planifiés
+    QList<const Agent *> equipe, exclus;
+    for (const Agent &a : m_agents) {
+        if (!estOperationnel(a.poste)) continue;
+        if (a.dispo == "En congé" || a.dispo == "En formation") exclus << &a;
+        else equipe << &a;
+    }
+    if (equipe.size() < 2) {
+        QMessageBox::warning(this, "Planning", "Il faut au moins 2 agents opérationnels disponibles.");
+        return false;
+    }
+    // Rotation d'une semaine à l'autre : l'ordre de départ des agents est décalé selon
+    // le numéro de la semaine, pour que les équipes changent chaque semaine
+    // (la même semaine redonne toujours le même planning, ce qui permet de le réimprimer).
+    int annee = 0;
+    const int semaine = debut.weekNumber(&annee);
+    const int decalage = (semaine * 3 + annee) % int(equipe.size());
+    std::rotate(equipe.begin(), equipe.begin() + decalage, equipe.end());
+    // Une semaine sur deux, les chauffeurs commencent par une garde de nuit
+    // (sinon un chauffeur seul ferait toujours les gardes de jour)
+    const bool chauffeursDeNuit = semaine % 2 == 1;
+
+    // Pour éviter deux gardes de suite, il faut au moins 2 équipes complètes
+    const int parGarde = std::max(1, std::min(agentsParGarde, int(equipe.size()) / 2));
+
+    // --- Construction des 14 gardes (7 jours x jour/nuit) par rotation
+    const int sergent = int(GRADES.indexOf("Sergent"));
+    // Plafond de gardes par agent sur la semaine (répartition équitable)
+    const int plafond = (14 * parGarde + int(equipe.size()) - 1) / int(equipe.size());
+    QMap<const Agent *, int> nbJour, nbNuit;
+    QList<const Agent *> precedente;
+    QVector<QList<const Agent *>> gardes(14);
+
+    for (int g = 0; g < 14; ++g) {
+        QList<const Agent *> choisis;
+        auto nbTotal = [&](const Agent *a) { return nbJour.value(a) + nbNuit.value(a); };
+        // candidats libres, triés : le moins de gardes d'abord
+        auto candidats = [&](auto filtre) {
+            QList<const Agent *> c;
+            for (const Agent *a : equipe)
+                if (!choisis.contains(a) && !precedente.contains(a) && nbTotal(a) < plafond && filtre(a))
+                    c << a;
+            std::stable_sort(c.begin(), c.end(), [&](const Agent *x, const Agent *y) {
+                return nbTotal(x) < nbTotal(y);
+            });
+            return c;
+        };
+        // 1) un gradé, qui sera chef de garde
+        const auto grades = candidats([&](const Agent *a) { return GRADES.indexOf(a->grade) >= sergent; });
+        if (!grades.isEmpty()) choisis << grades.first();
+        const bool sansChauffeur = (g == 0 && chauffeursDeNuit);
+        // 2) un chauffeur pour conduire l'engin
+        if (choisis.size() < parGarde && !sansChauffeur) {
+            const auto chauffeurs = candidats([](const Agent *a) { return a->poste == "Chauffeur"; });
+            if (!chauffeurs.isEmpty()) choisis << chauffeurs.first();
+        }
+        // 3) compléter l'équipe
+        auto autres = candidats([&](const Agent *a) { return !(sansChauffeur && a->poste == "Chauffeur"); });
+        while (choisis.size() < parGarde && !autres.isEmpty()) choisis << autres.takeFirst();
+        // 4) en dernier recours (effectif trop faible), lever les contraintes
+        for (const Agent *a : equipe)
+            if (choisis.size() < parGarde && !choisis.contains(a)) choisis << a;
+
+        for (const Agent *a : choisis) (g % 2 == 0 ? nbJour : nbNuit)[a]++;
+        std::stable_sort(choisis.begin(), choisis.end(), [](const Agent *x, const Agent *y) {
+            return GRADES.indexOf(x->grade) > GRADES.indexOf(y->grade);   // chef de garde en premier
+        });
+        gardes[g] = choisis;
+        precedente = choisis;
+    }
+
+    // --- Mise en page HTML
     QString chef = "—", rh = "—";
     for (const Agent &ag : m_agents) {
         if (ag.poste == "Chef de caserne" && chef == "—") chef = ag.nom + " " + ag.prenom;
         if (ag.poste == "Responsable RH" && rh == "—")   rh   = ag.nom + " " + ag.prenom;
     }
+    const QStringList jours = {"Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"};
+    auto cellule = [](const QList<const Agent *> &l) {
+        QStringList lignes;
+        for (int i = 0; i < l.size(); ++i) {
+            const Agent *a = l[i];
+            lignes << QString("%1%2 %3 %4 <span style='color:#777777'>(%5)</span>")
+                          .arg(i == 0 ? "&#9733; " : "", a->grade, a->nom.toHtmlEscaped(),
+                               a->prenom.toHtmlEscaped(), a->poste);
+        }
+        return lignes.join("<br>");
+    };
 
-    QString rows;
-    for (const Agent *a : garde) {
-        rows += QString("<tr><td>%1 %2</td><td>%3</td><td>%4</td><td>%5</td><td>%6</td></tr>")
-        .arg(a->nom.toHtmlEscaped(), a->prenom.toHtmlEscaped(), a->poste,
-             a->grade.isEmpty() ? "—" : a->grade, a->tel, a->dispo);
+    QString lignesPlanning;
+    for (int j = 0; j < 7; ++j) {
+        const QDate d = debut.addDays(j);
+        const QString fond = j >= 5 ? "#fdf3e1" : "#ffffff";   // week-end en couleur
+        lignesPlanning += QString("<tr bgcolor='%1'><td><b>%2</b><br>%3</td><td>%4</td><td>%5</td></tr>")
+                              .arg(fond, jours[j], d.toString("dd/MM/yyyy"),
+                                   cellule(gardes[2 * j]), cellule(gardes[2 * j + 1]));
     }
+
+    QString lignesBilan;
+    QList<const Agent *> tries = equipe;
+    std::stable_sort(tries.begin(), tries.end(), [](const Agent *x, const Agent *y) {
+        return GRADES.indexOf(x->grade) > GRADES.indexOf(y->grade);
+    });
+    for (const Agent *a : tries)
+        lignesBilan += QString("<tr><td>%1 %2</td><td>%3</td><td>%4</td><td>%5</td>"
+                               "<td align='center'>%6</td><td align='center'>%7</td><td align='center'><b>%8</b></td></tr>")
+                           .arg(a->nom.toHtmlEscaped(), a->prenom.toHtmlEscaped(), a->poste, a->grade, a->tel)
+                           .arg(nbJour.value(a)).arg(nbNuit.value(a)).arg(nbJour.value(a) + nbNuit.value(a));
+
+    QStringList nomsExclus;
+    for (const Agent *a : exclus) nomsExclus << QString("%1 %2 (%3)").arg(a->nom, a->prenom, a->dispo);
+    const QString remarque = parGarde < agentsParGarde
+                                 ? QString("<p style='color:#b3211c'>Effectif insuffisant : %1 agent(s) par garde au lieu de %2.</p>")
+                                       .arg(parGarde).arg(agentsParGarde)
+                                 : QString();
+
     const QString html = QString(
                              "<table width='100%'><tr>"
-                             "<td width='90'><img src='logo' width='80' height='80'></td>"
-                             "<td><h2>Planning de garde</h2>"
-                             "<p>%1<br>Chef de caserne : %2 — Responsable RH : %3<br>Édité le %4</p></td>"
-                             "</tr></table><br>"
+                             "<td width='80'><img src='logo' width='70' height='70'></td>"
+                             "<td><h2 style='color:#b3211c'>Planning de garde — semaine du %1 au %2</h2>"
+                             "%3<br>Chef de caserne : %4 — Responsable RH : %5 — Édité le %6</td>"
+                             "</tr></table><br>%7"
                              "<table border='1' cellspacing='0' cellpadding='5' width='100%'>"
-                             "<tr bgcolor='#dddddd'><th>Agent</th><th>Poste</th><th>Grade</th>"
-                             "<th>Téléphone</th><th>Statut</th></tr>%5</table>")
-                             .arg(UNITE, chef, rh,
-                                  QDate::currentDate().toString("dd/MM/yyyy"), rows);
+                             "<tr bgcolor='#b3211c'><th><font color='white'>Jour</font></th>"
+                             "<th><font color='white'>Garde de jour (08h – 20h)</font></th>"
+                             "<th><font color='white'>Garde de nuit (20h – 08h)</font></th></tr>%8</table>"
+                             "<p style='font-size:9pt;color:#555555'>&#9733; Chef de garde (agent le plus gradé). "
+                             "Règles : un gradé (Sergent ou plus) par garde, un chauffeur si disponible, "
+                             "pas deux gardes consécutives, répartition équitable.<br>"
+                             "Agents non planifiés : %9</p>")
+                             .arg(debut.toString("dd/MM/yyyy"), debut.addDays(6).toString("dd/MM/yyyy"), UNITE, chef, rh,
+                                  QDate::currentDate().toString("dd/MM/yyyy"), remarque, lignesPlanning,
+                                  nomsExclus.isEmpty() ? "aucun" : nomsExclus.join(", "))
+                         + QString("<h3 style='page-break-before:always'>Récapitulatif des gardes par agent</h3>"
+                                   "<table border='1' cellspacing='0' cellpadding='4' width='100%'>"
+                                   "<tr bgcolor='#dddddd'><th>Agent</th><th>Poste</th><th>Grade</th><th>Téléphone</th>"
+                                   "<th>Jour</th><th>Nuit</th><th>Total</th></tr>%1</table>")
+                               .arg(lignesBilan);
 
-    QPdfWriter writer(path);
-    writer.setPageSize(QPageSize(QPageSize::A4));
+    QPdfWriter writer(chemin);
+    writer.setPageLayout(QPageLayout(QPageSize(QPageSize::A4), QPageLayout::Landscape,
+                                     QMarginsF(12, 12, 12, 12)));
     QTextDocument doc;
+    QFont police("Arial");
+    police.setPointSize(9);
+    doc.setDefaultFont(police);
     doc.addResource(QTextDocument::ImageResource, QUrl("logo"),
                     QImage(":/logo_USPC.png").scaled(240, 240, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     doc.setHtml(html);
     doc.print(&writer);
-    QMessageBox::information(this, "Export", "Planning exporté :\n" + path);
+    return true;
 }

@@ -1,6 +1,13 @@
 #include "pageconnexion.h"
 
 #include <QCryptographicHash>
+#include <QDateTime>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QInputDialog>
+#include <QMessageBox>
+#include <QRandomGenerator>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -14,6 +21,7 @@
 namespace {
 const int MAX_TENTATIVES   = 3;    // nombre d'essais avant blocage
 const int DUREE_BLOCAGE_S  = 30;   // durée du blocage en secondes
+const int VALIDITE_CODE_S  = 300;  // le code reçu par SMS est valable 5 minutes
 
 const char *STYLE_CONNEXION = R"(
 PageConnexion { background: #f4f2ef; }
@@ -38,6 +46,9 @@ QPushButton#btnConnexion { background: #b3211c; color: white; border: none; bord
                            padding: 10px; font-size: 15px; font-weight: bold; }
 QPushButton#btnConnexion:hover { background: #d02a24; }
 QPushButton#btnConnexion:disabled { background: #d9a09d; }
+QPushButton#lienOubli { background: transparent; border: none; color: #b3211c;
+                        font-size: 12px; text-decoration: underline; }
+QPushButton#lienOubli:hover { color: #d02a24; }
 )";
 }
 
@@ -128,10 +139,11 @@ PageConnexion::PageConnexion(QWidget *parent) : QWidget(parent)
     btnConnexion->setCursor(Qt::PointingHandCursor);
     lc->addWidget(btnConnexion);
     lc->addSpacing(8);
-    auto *oubli = new QLabel("Mot de passe oublié ? Contactez le Responsable RH.");
-    oubli->setObjectName("aide");
-    oubli->setAlignment(Qt::AlignCenter);
-    lc->addWidget(oubli);
+    auto *oubli = new QPushButton("Mot de passe oublié ?");
+    oubli->setObjectName("lienOubli");
+    oubli->setCursor(Qt::PointingHandCursor);
+    connect(oubli, &QPushButton::clicked, this, &PageConnexion::motDePasseOublie);
+    lc->addWidget(oubli, 0, Qt::AlignHCenter);
 
     ld->addWidget(carte, 0, Qt::AlignHCenter);
     ld->addStretch();
@@ -231,4 +243,110 @@ void PageConnexion::bloquer()
     lblErreur->setText(QString("Trop de tentatives échouées. Réessayez dans %1 s.")
                            .arg(m_secondesRestantes));
     m_minuteur->start();
+}
+
+// ----------------------------------------------------------------------------
+//  Mot de passe oublié : un code à 6 chiffres est envoyé par SMS à l'agent,
+//  puis l'agent saisit ce code et choisit un nouveau mot de passe.
+// ----------------------------------------------------------------------------
+void PageConnexion::motDePasseOublie()
+{
+    // 1) Identifiant de l'agent
+    bool ok = false;
+    const QString id = QInputDialog::getText(this, "Mot de passe oublié",
+                                             "Saisissez votre identifiant d'agent (ex. AGT-018) :",
+                                             QLineEdit::Normal, edIdentifiant->text().trimmed(), &ok)
+                           .trimmed().toUpper();
+    if (!ok || id.isEmpty()) return;
+
+    const Compte *compte = nullptr;
+    for (const Compte &c : m_comptes)
+        if (c.identifiant.compare(id, Qt::CaseInsensitive) == 0) compte = &c;
+    if (!compte || compte->tel.trimmed().isEmpty()) {
+        QMessageBox::warning(this, "Mot de passe oublié",
+                             "Identifiant inconnu ou aucun numéro de téléphone enregistré.\n"
+                             "Contactez le Responsable RH.");
+        return;
+    }
+    const Compte c = *compte;   // copie : la liste peut changer pendant la saisie
+
+    // 2) Envoi du code par SMS (mode simulation : le code est aussi affiché)
+    const QString code = QString::number(QRandomGenerator::global()->bounded(100000, 1000000));
+    const QDateTime expiration = QDateTime::currentDateTime().addSecs(VALIDITE_CODE_S);
+    emit smsDemande(c.tel, QString("USPC - Votre code de réinitialisation est %1 "
+                                   "(valable 5 minutes).").arg(code), c.nom);
+    QString numero = c.tel;
+    numero.remove(' ');
+    QMessageBox::information(this, "Code envoyé",
+                             QString("Un code à 6 chiffres a été envoyé par SMS au numéro se terminant par %1.\n\n"
+                                     "Mode simulation — SMS reçu : « Votre code de réinitialisation est %2 ».")
+                                 .arg(numero.right(3), code));
+
+    // 3) Saisie du code et du nouveau mot de passe
+    QDialog dlg(this);
+    dlg.setWindowTitle("Nouveau mot de passe");
+    auto *form = new QFormLayout(&dlg);
+    auto *edCode = new QLineEdit;
+    edCode->setMaxLength(6);
+    edCode->setPlaceholderText("Code reçu par SMS");
+    auto *edNouveau = new QLineEdit;
+    edNouveau->setEchoMode(QLineEdit::Password);
+    edNouveau->setPlaceholderText("6 caractères minimum");
+    auto *edConfirm = new QLineEdit;
+    edConfirm->setEchoMode(QLineEdit::Password);
+    auto *lblMsg = new QLabel;
+    lblMsg->setStyleSheet("color:#b3211c;");
+    lblMsg->setWordWrap(true);
+    form->addRow("Code :", edCode);
+    form->addRow("Nouveau mot de passe :", edNouveau);
+    form->addRow("Confirmation :", edConfirm);
+    form->addRow(lblMsg);
+    auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    form->addRow(bb);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    int essais = 0;
+    connect(bb, &QDialogButtonBox::accepted, &dlg, [&] {
+        if (QDateTime::currentDateTime() > expiration) {
+            QMessageBox::warning(&dlg, "Code expiré", "Le code a expiré. Recommencez la procédure.");
+            dlg.reject();
+            return;
+        }
+        if (edCode->text().trimmed() != code) {
+            if (++essais >= MAX_TENTATIVES) {
+                QMessageBox::warning(&dlg, "Code incorrect",
+                                     "Trop de codes incorrects. Recommencez la procédure.");
+                dlg.reject();
+                return;
+            }
+            lblMsg->setText(QString("Code incorrect (essai %1 sur %2).").arg(essais).arg(MAX_TENTATIVES));
+            return;
+        }
+        if (edNouveau->text().size() < 6) {
+            lblMsg->setText("Le mot de passe doit contenir au moins 6 caractères.");
+            return;
+        }
+        if (edNouveau->text() != edConfirm->text()) {
+            lblMsg->setText("Les deux mots de passe ne sont pas identiques.");
+            return;
+        }
+        dlg.accept();
+    });
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    // 4) Enregistrement du nouveau mot de passe (chiffré)
+    const QString nouveauHash = hacher(edNouveau->text());
+    for (Compte &x : m_comptes)
+        if (x.identifiant == c.identifiant) x.mdpHash = nouveauHash;
+    emit motDePasseReinitialise(c.identifiant, nouveauHash);
+    emit smsDemande(c.tel, "USPC - Votre mot de passe a été modifié. "
+                           "Si vous n'êtes pas à l'origine de cette demande, contactez le Responsable RH.", c.nom);
+
+    m_echecs = 0;
+    edIdentifiant->setText(c.identifiant);
+    edMdp->clear();
+    lblErreur->clear();
+    edMdp->setFocus();
+    QMessageBox::information(this, "Mot de passe modifié",
+                             "Votre mot de passe a été modifié. Vous pouvez vous connecter.");
 }

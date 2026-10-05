@@ -20,7 +20,6 @@ class QScrollArea;
 class QFrame;
 class QDateEdit;
 class QWidget;
-class QNetworkAccessManager;
 
 struct Certification {
     QString nom;
@@ -78,6 +77,10 @@ public:
     void appliquerRole(const QString &identifiant, const QString &nom,
                        const QString &role);                      // adapte le menu et les droits
 
+    // SMS (simulation) et mot de passe, utilisés aussi par la page de connexion
+    void envoyerSms(const QString &tel, const QString &message, const QString &destinataire);
+    void changerMotDePasse(const QString &identifiant, const QString &mdpHash);
+
 signals:
     void deconnexion();
 
@@ -118,11 +121,13 @@ private:
                        const QString &idAgent, const QString &actionTxt = QString(),
                        std::function<void()> action = nullptr);
 
+    // Planning de garde hebdomadaire (export PDF)
+    bool genererPlanningPdf(const QString &chemin, QDate debut, int agentsParGarde);
+
     // Navigation animée entre les pages
     void allerPage(int index);
 
     // Innovation 1 : SMS de renouvellement des certifications
-    void envoyerSms(const QString &tel, const QString &message, const QString &destinataire);
     void verifierEcheancesSms();           // envoi automatique
     QString cleSms(const Agent &a, const Certification &c) const;
 
@@ -135,7 +140,6 @@ private:
     QString                 m_editingId;
     QSet<QString>           m_smsEnvoyes;   // certifications déjà notifiées par SMS
     QStringList             m_journalSms;   // historique des SMS
-    QNetworkAccessManager  *m_net = nullptr;
 
     // navigation
     QStackedWidget *pages = nullptr;

@@ -42,6 +42,11 @@ int main(int argc, char *argv[])
                          fenetre.setCurrentWidget(&application);
                      });
 
+    // Mot de passe oublié : SMS envoyé par l'application, nouveau mot de passe enregistré
+    QObject::connect(&connexion, &PageConnexion::smsDemande, &application, &FireStation::envoyerSms);
+    QObject::connect(&connexion, &PageConnexion::motDePasseReinitialise,
+                     &application, &FireStation::changerMotDePasse);
+
     // Déconnexion : retour à la page de connexion (liste des comptes mise à jour)
     QObject::connect(&application, &FireStation::deconnexion, &fenetre, [&] {
         connexion.setComptes(application.comptes());
