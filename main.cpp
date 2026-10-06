@@ -5,7 +5,10 @@
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
+
     smart w;
+    w.setUtilisateur("Admin", "Chef de caserne");
     w.show();
-    return QApplication::exec();
+
+    return a.exec();
 }

@@ -1,4 +1,4 @@
-QT += widgets printsupport
+QT += widgets printsupport network
 CONFIG += c++17
 
 # You can make your code fail to compile if it uses deprecated APIs.
