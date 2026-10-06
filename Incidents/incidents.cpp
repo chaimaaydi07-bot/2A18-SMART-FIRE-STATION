@@ -1791,8 +1791,12 @@ private:
         root->setContentsMargins(0, 0, 0, 0);
         root->setSpacing(0);
 
-        // Ce menu est aussi sans animation.
-        root->addWidget(createSidebar(&dialog, true));
+        // Integration : la fenetre des statistiques s'affiche exactement a la place
+        // de la page Incidents, a droite du menu de l'application (sans cadre).
+        // root->addWidget(createSidebar(&dialog, true));
+        dialog.setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+        dialog.setMinimumSize(0, 0);
+        dialog.setGeometry(QRect(mapToGlobal(QPoint(0, 0)), size()));
 
         auto *scroll = new QScrollArea;
         scroll->setWidgetResizable(true);
@@ -2180,6 +2184,7 @@ private:
     }
 };
 
+// ============================================================
 // ============================================================
 
 } // namespace incidents

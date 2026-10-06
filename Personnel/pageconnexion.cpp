@@ -1,4 +1,5 @@
 #include "pageconnexion.h"
+#include "logoanime.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -25,7 +26,8 @@ const int VALIDITE_CODE_S  = 300;  // le code reçu par SMS est valable 5 minute
 
 const char *STYLE_CONNEXION = R"(
 PageConnexion { background: #f4f2ef; }
-#panneau { background: #b3211c; }
+#panneau { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #27050c, stop:0.32 #59101a, stop:0.68 #a71928, stop:1 #d53d39); }
 #panneau QLabel { color: white; background: transparent; }
 #panneau QLabel#logoRond { background: white; border-radius: 110px; }
 #titreApp { font-size: 26px; font-weight: bold; }
@@ -68,12 +70,8 @@ PageConnexion::PageConnexion(QWidget *parent) : QWidget(parent)
     auto *lp = new QVBoxLayout(panneau);
     lp->setContentsMargins(40, 40, 40, 40);
     lp->addStretch();
-    auto *logo = new QLabel;
-    logo->setObjectName("logoRond");
+    auto *logo = new LogoAnime(":/logo_USPC.png", true, true);   // logo animé et net
     logo->setFixedSize(220, 220);
-    logo->setAlignment(Qt::AlignCenter);
-    logo->setPixmap(QPixmap(":/logo_USPC.png").scaled(150, 150, Qt::KeepAspectRatio,
-                                                      Qt::SmoothTransformation));
     lp->addWidget(logo, 0, Qt::AlignHCenter);
     lp->addSpacing(24);
     auto *titre = new QLabel("Smart Fire Station");

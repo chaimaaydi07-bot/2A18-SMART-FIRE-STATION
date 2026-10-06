@@ -4,6 +4,16 @@
 #include "firestation.h"
 #include "pageconnexion.h"
 
+// Après un changement de page, Windows ne recalcule pas la taille d'une fenêtre
+// déjà agrandie : on la remet en taille normale puis de nouveau en plein écran.
+static void recalerFenetre(QStackedWidget &fenetre)
+{
+    if (fenetre.isMaximized()) {
+        fenetre.showNormal();
+        fenetre.showMaximized();
+    }
+}
+
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
@@ -40,6 +50,7 @@ int main(int argc, char *argv[])
                      [&](const QString &id, const QString &nom, const QString &role) {
                          application.appliquerRole(id, nom, role);
                          fenetre.setCurrentWidget(&application);
+                         recalerFenetre(fenetre);
                      });
 
     // Mot de passe oublié : SMS envoyé par l'application, nouveau mot de passe enregistré
@@ -52,9 +63,10 @@ int main(int argc, char *argv[])
         connexion.setComptes(application.comptes());
         connexion.reinitialiser();
         fenetre.setCurrentWidget(&connexion);
+        recalerFenetre(fenetre);
     });
 
     fenetre.resize(1280, 820);
-    fenetre.show();
+    fenetre.showMaximized();   // l'application s'ouvre en plein écran
     return app.exec();
 }

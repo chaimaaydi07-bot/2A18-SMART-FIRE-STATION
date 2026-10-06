@@ -1,4 +1,5 @@
 #include "firestation.h"
+#include "logoanime.h"
 
 #include <QApplication>
 #include <QComboBox>
@@ -350,12 +351,13 @@ QTableWidget { color: #222; }
 QCalendarWidget QWidget { color: #222; background: white; }
 QMainWindow, #main { background: #f4f2ef; }
 #statsRoot { background: #f4f2ef; }
-#sidebar { background: #b3211c; }
-#sidebar QPushButton { color: white; background: transparent; border: none;
-    text-align: left; padding: 10px 22px; font-size: 14px; border-left: 4px solid transparent; }
-#sidebar QPushButton:hover { background: rgba(255,255,255,0.12); }
-#sidebar QPushButton:checked { background: rgba(255,255,255,0.22); font-weight: bold;
-    border-left: 4px solid #f2a10c; }
+#sidebar { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #27050c, stop:0.32 #59101a, stop:0.68 #a71928, stop:1 #d53d39); }
+#sidebar QPushButton { color: white; background: transparent; border: 1px solid transparent;
+    border-radius: 10px; text-align: left; padding: 10px 16px; margin: 0 12px; font-size: 14px; }
+#sidebar QPushButton:hover { background: rgba(255,255,255,0.14); border: 1px solid #cf7780; }
+#sidebar QPushButton:checked { background: white; color: #981a27; font-weight: bold;
+    border: 2px solid #f1bec4; }
 #sidebar QLabel#acteur { color: rgba(255,255,255,0.85); font-size: 12px; padding: 0 22px; }
 #sidebar QPushButton#deco { color: white; border: 1px solid rgba(255,255,255,0.6); border-radius: 6px;
     margin: 10px 22px 0 22px; padding: 7px; text-align: center; font-size: 13px; }
@@ -510,14 +512,8 @@ QWidget *FireStation::creerSidebar()
     l->setSpacing(0);
 
     // Logo animé (flamme + gyrophares en boucle)
-    auto *logo = new QLabel;
-    logo->setObjectName("logo");
+    auto *logo = new LogoAnime(":/logo_USPC.png", false, true);   // net, dessiné par Qt
     logo->setFixedSize(150, 150);
-    logo->setAlignment(Qt::AlignCenter);
-    auto *movie = new QMovie(":/logo_USPC_boucle.gif", QByteArray(), logo);
-    movie->setScaledSize(QSize(106, 106));   // reste à l'intérieur du cercle blanc
-    logo->setMovie(movie);
-    movie->start();
     l->addWidget(logo, 0, Qt::AlignHCenter);
     l->addSpacing(20);
 
