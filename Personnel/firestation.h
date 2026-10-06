@@ -21,6 +21,7 @@ class QScrollArea;
 class QFrame;
 class QDateEdit;
 class QWidget;
+class smart;
 
 struct Certification {
     QString nom;
@@ -171,6 +172,8 @@ private:
     QLabel       *lblAVenir = nullptr;
     QMap<QString, QPushButton *> m_boutonsModules;
     QWidget      *pageIncidents = nullptr;     // module Incidents
+    smart        *pageEquipements = nullptr;   // module Equipements (cree a la 1re ouverture)
+    QString       m_nomConnecte;            // nom de l'agent connecte
     bool          m_lectureSeule = false;   // true = consultation uniquement
     QString       m_idConnecte;             // ID de l'agent connecté
     QString       m_roleConnecte;           // rôle de l'agent connecté

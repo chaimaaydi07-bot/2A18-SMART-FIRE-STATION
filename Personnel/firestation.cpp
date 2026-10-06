@@ -1,5 +1,6 @@
 #include "firestation.h"
 #include "logoanime.h"
+#include "smart.h"
 
 #include <QApplication>
 #include <QComboBox>
@@ -527,6 +528,16 @@ QWidget *FireStation::creerSidebar()
         if (t == "Personnel") navPersonnel = b;
         else if (t == "Incidents")
             connect(b, &QPushButton::clicked, this, [this] { allerPage(4); });
+        else if (t == "Équipements")
+            connect(b, &QPushButton::clicked, this, [this] {
+                if (!pageEquipements) {                    // cree a la premiere ouverture
+                    pageEquipements = new smart;
+                    pageEquipements->setWindowFlags(Qt::Widget);
+                    pages->addWidget(pageEquipements);
+                }
+                pageEquipements->setUtilisateur(m_nomConnecte, m_roleConnecte);
+                pages->setCurrentWidget(pageEquipements);
+            });
         else connect(b, &QPushButton::clicked, this, [this, t] {
                 lblAVenir->setText(QString("Module %1\n\n(ajouté lors de l'intégration)").arg(t));
                 allerPage(3);
@@ -943,6 +954,7 @@ void FireStation::appliquerRole(const QString &identifiant, const QString &nom, 
 {
     m_idConnecte = identifiant;
     m_roleConnecte = role;
+    m_nomConnecte = nom;
     lblActeur->setText(QString("Connecté :<br><b>%1</b><br>%2").arg(nom.toHtmlEscaped(), role));
 
     // Menu : seuls les modules autorisés pour ce rôle sont visibles
