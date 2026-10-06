@@ -8,6 +8,7 @@
 #include <QMap>
 #include <functional>
 #include "pageconnexion.h"
+#include "incidents.h"
 
 class QLineEdit;
 class QComboBox;
@@ -169,6 +170,7 @@ private:
     QLabel       *lblActeur = nullptr;
     QLabel       *lblAVenir = nullptr;
     QMap<QString, QPushButton *> m_boutonsModules;
+    QWidget      *pageIncidents = nullptr;     // module Incidents
     bool          m_lectureSeule = false;   // true = consultation uniquement
     QString       m_idConnecte;             // ID de l'agent connecté
     QString       m_roleConnecte;           // rôle de l'agent connecté

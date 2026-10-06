@@ -480,6 +480,10 @@ FireStation::FireStation(QWidget *parent) : QMainWindow(parent)
     lblAVenir->setAlignment(Qt::AlignCenter);
     pages->addWidget(lblAVenir);
 
+    // Page 4 : module Incidents (coequipiere)
+    pageIncidents = creerModuleIncidents();
+    pages->addWidget(pageIncidents);
+
     root->addWidget(pages, 1);
     setCentralWidget(central);
     statusBar()->showMessage("SMS : mode simulation (voir le Journal SMS)");
@@ -525,6 +529,8 @@ QWidget *FireStation::creerSidebar()
         b->setChecked(t == "Personnel");
         b->setCursor(Qt::PointingHandCursor);
         if (t == "Personnel") navPersonnel = b;
+        else if (t == "Incidents")
+            connect(b, &QPushButton::clicked, this, [this] { allerPage(4); });
         else connect(b, &QPushButton::clicked, this, [this, t] {
                 lblAVenir->setText(QString("Module %1\n\n(ajouté lors de l'intégration)").arg(t));
                 allerPage(3);
