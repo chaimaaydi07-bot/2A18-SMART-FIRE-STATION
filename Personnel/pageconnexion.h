@@ -46,6 +46,7 @@ private slots:
     void seConnecter();
     void afficherMasquerMdp();
     void motDePasseOublie();
+    void demanderCompte();       // demande de compte envoyée par SMS au Responsable RH
 
 private:
     void bloquer();

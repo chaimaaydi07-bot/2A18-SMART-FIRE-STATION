@@ -57,6 +57,15 @@ QLabel#langue { background: white; border: 1px solid #d9d3cc; border-radius: 8px
 #carte QFrame#avertissement { background: #fbf3e4; border: 1px solid #f0ddb8; border-radius: 9px; }
 #carte QLabel#texteAvertissement { color: #5a4520; font-size: 12px; }
 QLabel#mention { color: #6b645d; font-size: 12px; }
+QDialog#demandeCompte { background: white; }
+QDialog#demandeCompte QLabel { color: #1e1b19; }
+QDialog#demandeCompte QLabel#aideDemande { color: #5c5650; font-size: 12px; }
+QDialog#demandeCompte QPushButton { background: white; color: #1e1b19; border: 1px solid #d9d3cc;
+                                    border-radius: 8px; padding: 8px 16px; font-size: 13px; }
+QDialog#demandeCompte QPushButton:hover { border: 1px solid #9e1b17; }
+QDialog#demandeCompte QPushButton#btnEnvoyer { background: #b3211c; color: white; border: none;
+                                               font-weight: bold; }
+QDialog#demandeCompte QPushButton#btnEnvoyer:hover { background: #9e1b17; }
 QLabel#piedPage { color: #8a847e; font-size: 11px; }
 QLineEdit { background: #faf8f6; border: 1px solid #d9d3cc; border-radius: 9px;
             padding: 0 12px; min-height: 44px; font-size: 14px; color: #1e1b19; }
@@ -267,10 +276,16 @@ PageConnexion::PageConnexion(QWidget *parent) : QWidget(parent)
 
     ld->addWidget(carte, 0, Qt::AlignHCenter);
     ld->addSpacing(16);
-    auto *mention = new QLabel("Accès réservé au personnel autorisé de l'USPC.\n"
-                               "Pas encore de compte ? Contactez le Responsable RH.");
+    // Mention + lien « Demander un compte » (envoie une demande par SMS au Responsable RH)
+    auto *mention = new QLabel("Accès réservé au personnel autorisé de l'USPC.<br>"
+                               "Pas encore de compte ? <a href='demande' style='color:#9e1b17; "
+                               "font-weight:bold; text-decoration:none;'>Demander un compte au "
+                               "Responsable RH</a>");
     mention->setObjectName("mention");
     mention->setAlignment(Qt::AlignCenter);
+    mention->setTextFormat(Qt::RichText);
+    mention->setCursor(Qt::PointingHandCursor);
+    connect(mention, &QLabel::linkActivated, this, [this] { demanderCompte(); });
     ld->addWidget(mention, 0, Qt::AlignHCenter);
     ld->addStretch();
 
@@ -488,4 +503,86 @@ void PageConnexion::motDePasseOublie()
     edMdp->setFocus();
     QMessageBox::information(this, "Mot de passe modifié",
                              "Votre mot de passe a été modifié. Vous pouvez vous connecter.");
+}
+
+// ============================================================================
+//  Demande de compte : l'agent remplit un petit formulaire, l'application
+//  envoie la demande par SMS au Responsable RH (qui crée ensuite le compte
+//  dans le module Personnel).
+// ============================================================================
+void PageConnexion::demanderCompte()
+{
+    // Responsable RH destinataire (lu dans la liste des comptes, rien n'est écrit en dur)
+    const Compte *rh = nullptr;
+    for (const Compte &c : m_comptes)
+        if (c.role == "Responsable RH" && !c.tel.trimmed().isEmpty()) { rh = &c; break; }
+    if (!rh) {
+        QMessageBox::warning(this, "Demander un compte",
+                             "Aucun Responsable RH joignable pour le moment.\n"
+                             "Adressez-vous directement à l'administration de l'unité.");
+        return;
+    }
+    const Compte destinataire = *rh;
+
+    QDialog dlg(this);
+    dlg.setObjectName("demandeCompte");
+    dlg.setWindowTitle("Demander un compte");
+    dlg.setMinimumWidth(420);
+    auto *v = new QVBoxLayout(&dlg);
+    v->setContentsMargins(22, 20, 22, 18);
+    v->setSpacing(10);
+    auto *aide = new QLabel(QString("Votre demande sera envoyée par SMS au Responsable RH "
+                                    "(%1). Il créera votre compte si votre poste a accès à "
+                                    "l'application.").arg(destinataire.nom));
+    aide->setObjectName("aideDemande");
+    aide->setWordWrap(true);
+    v->addWidget(aide);
+
+    auto *form = new QFormLayout;
+    form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    form->setVerticalSpacing(10);
+    auto *edNomComplet = new QLineEdit;
+    edNomComplet->setPlaceholderText("ex. Sassi Mohamed");
+    auto *edIdAgent = new QLineEdit;
+    edIdAgent->setPlaceholderText("ex. AGT-019 (si vous le connaissez)");
+    auto *edPoste = new QLineEdit;
+    edPoste->setPlaceholderText("ex. Dispatcher");
+    form->addRow("Nom et prénom *", edNomComplet);
+    form->addRow("Identifiant d'agent", edIdAgent);
+    form->addRow("Poste", edPoste);
+    v->addLayout(form);
+
+    auto *erreur = new QLabel;
+    erreur->setStyleSheet("color:#b3211c; font-size:12px;");
+    v->addWidget(erreur);
+
+    auto *boutons = new QDialogButtonBox;
+    auto *envoyer = boutons->addButton("Envoyer la demande", QDialogButtonBox::AcceptRole);
+    envoyer->setObjectName("btnEnvoyer");
+    envoyer->setCursor(Qt::PointingHandCursor);
+    boutons->addButton("Annuler", QDialogButtonBox::RejectRole);
+    v->addWidget(boutons);
+    connect(boutons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    connect(boutons, &QDialogButtonBox::accepted, &dlg, [&] {
+        if (edNomComplet->text().trimmed().size() < 3) {
+            erreur->setText("Indiquez votre nom et prénom.");
+            return;
+        }
+        dlg.accept();
+    });
+    edNomComplet->setFocus();
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    QString message = QString("USPC - Demande de compte : %1").arg(edNomComplet->text().trimmed());
+    if (!edIdAgent->text().trimmed().isEmpty())
+        message += QString(" (%1)").arg(edIdAgent->text().trimmed().toUpper());
+    if (!edPoste->text().trimmed().isEmpty())
+        message += QString(", poste %1").arg(edPoste->text().trimmed());
+    message += ". Merci de créer son accès dans le module Personnel.";
+    emit smsDemande(destinataire.tel, message, destinataire.nom);
+
+    QMessageBox::information(this, "Demande envoyée",
+                             QString("Votre demande a été envoyée au Responsable RH (%1).\n"
+                                     "Vous recevrez vos identifiants dès que votre compte sera créé.")
+                                 .arg(destinataire.nom));
 }
