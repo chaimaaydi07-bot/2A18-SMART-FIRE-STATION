@@ -1,0 +1,13 @@
+<RCC>
+    <qresource prefix="/images">
+        <file>assets/logo.png</file>
+    </qresource>
+    <qresource prefix="/icons">
+        <file alias="close.png">assets/icons/bouton-x.png</file>
+        <file alias="vehicle.png">assets/icons/camion-de-pompier.png</file>
+        <file alias="back.png">assets/icons/fleche-gauche.png</file>
+        <file alias="maintenance.png">assets/icons/maintenance.png</file>
+        <file alias="settings.png">assets/icons/parametres.png</file>
+        <file alias="success.png">assets/icons/succes.png</file>
+    </qresource>
+</RCC>

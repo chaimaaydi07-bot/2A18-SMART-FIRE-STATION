@@ -1,41 +1,34 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.19)
+project(vehicule LANGUAGES CXX)
 
-project(smartfireincidents VERSION 0.1 LANGUAGES CXX)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets)
 
-set(CMAKE_AUTOUIC ON)
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
+qt_standard_project_setup()
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
-
-set(PROJECT_SOURCES
+qt_add_executable(vehicule
+    WIN32 MACOSX_BUNDLE
     main.cpp
-    images.qrc
+    mainwindow.cpp
+    mainwindow.h
+    mainwindow.ui
+    resources.qrc
 )
 
-if(QT_VERSION_MAJOR EQUAL 6)
-    qt_add_executable(smartfireincidents
-        MANUAL_FINALIZATION
-        ${PROJECT_SOURCES}
-    )
-else()
-    add_executable(smartfireincidents
-        ${PROJECT_SOURCES}
-    )
-endif()
-
-target_link_libraries(smartfireincidents
-    PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
+target_link_libraries(vehicule
+    PRIVATE
+        Qt::Core
+        Qt::Widgets
 )
 
-set_target_properties(smartfireincidents PROPERTIES
-    WIN32_EXECUTABLE TRUE
+install(TARGETS vehicule
+    BUNDLE  DESTINATION .
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
-if(QT_VERSION_MAJOR EQUAL 6)
-    qt_finalize_executable(smartfireincidents)
-endif()
+qt_generate_deploy_app_script(
+    TARGET vehicule
+    OUTPUT_SCRIPT deploy_script
+    NO_UNSUPPORTED_PLATFORM_ERROR
+)
+install(SCRIPT ${deploy_script})
