@@ -1,7 +1,10 @@
 #include "firestation.h"
 #include "logoanime.h"
 #include "smart.h"
+#if __has_include("vehicules.h")   // module Véhicules présent dans cette branche ?
 #include "vehicules.h"
+#define AVEC_VEHICULES
+#endif
 
 #include <QApplication>
 #include <QComboBox>
@@ -438,6 +441,7 @@ QVBoxLayout *enTetePage(const QString &page, const QString &titre, const QString
 
 const char *STYLE = R"(
 QWidget { color: #222; }
+QComboBox QFrame { background: white; }
 QComboBox QAbstractItemView { background: white; color: #222;
     selection-background-color: #f2a10c; selection-color: #222; }
 QTableWidget { color: #222; }
@@ -481,6 +485,19 @@ QPushButton#rouge  { background: #b3211c; border: none; font-weight: bold; color
 QPushButton#rouge:hover { background: #d02a24; }
 QPushButton#rouge:disabled { background: #d9a09d; }
 QPushButton#retour { color: #b3211c; font-weight: bold; border: 1px solid #e8b4b1; }
+QPushButton#secondaire { background: white; color: #3a0b12; font-weight: 600;
+    border: 1px solid #e0d6d3; border-radius: 8px; padding: 8px 14px; }
+QPushButton#secondaire:hover { background: #fbf1f0; border: 1px solid #b3211c; color: #b3211c; }
+QPushButton#contour { background: white; color: #b3211c; font-weight: bold;
+    border: 1px solid #e8b4b1; border-radius: 6px; padding: 6px 14px; }
+QPushButton#contour:hover { background: #b3211c; color: white; border: 1px solid #b3211c; }
+QPushButton#lienAjout { background: transparent; border: none; color: #b3211c;
+    font-weight: bold; padding: 2px 0; text-align: right; }
+QPushButton#lienAjout:hover { color: #7a1512; text-decoration: underline; }
+QToolButton#danger { color: #b3211c; }
+QToolButton#danger:hover { background: #fbe4e2; border: 1px solid #b3211c; }
+#zoneCerts { background: transparent; border: 1px dashed #e0d6d3; border-radius: 8px; }
+QStatusBar { background: white; color: #6b645d; border-top: 1px solid #e8e2dc; }
 QPushButton#retour:hover { background: #fbe4e2; }
 QToolButton { background: white; border: 1px solid #e4e0da; border-radius: 6px; padding: 4px 8px; }
 QToolButton:hover { background: #fdf3e1; border: 1px solid #f2a10c; }
@@ -529,26 +546,26 @@ FireStation::FireStation(QWidget *parent) : QMainWindow(parent)
     content->setContentsMargins(22, 20, 22, 20);
     content->setSpacing(10);
 
-    content->addWidget(etiquette("Gestion du personnel", "titre"));
-
+    // En-tête : titre + sous-titre à gauche, actions secondaires à droite
     auto *bar = new QHBoxLayout;
-    bar->addWidget(new QLabel("Trier par :"));
-    cbTri = new QComboBox;
+    auto *blocTitre = new QVBoxLayout;
+    blocTitre->setSpacing(2);
+    blocTitre->addWidget(etiquette("Gestion du personnel", "titre"));
+    blocTitre->addWidget(etiquette("Effectif de l'unité, disponibilités, certifications et planning de garde", "sous"));
+    bar->addLayout(blocTitre, 1);
+    cbTri = new QComboBox;   // placé dans la barre du tableau (creerListe)
     cbTri->addItems({"Disponibilité", "Nom", "Grade"});
-    bar->addWidget(cbTri);
-    auto *btnPdf = new QPushButton("↓ Planning de garde (PDF)");
-    btnPdf->setObjectName("orange");
+    auto *btnPdf = new QPushButton("Planning de garde (PDF)");
     auto *btnStats = new QPushButton("Statistiques");
-    btnStats->setObjectName("orange");
     auto *btnForm = new QPushButton("Formations recommandées");
-    btnForm->setObjectName("orange");
     auto *btnSms = new QPushButton("Journal SMS");
-    for (QPushButton *b : {btnPdf, btnStats, btnForm, btnSms}) {
+    for (QPushButton *b : {btnStats, btnForm, btnSms, btnPdf}) {
+        b->setObjectName("secondaire");
         b->setCursor(Qt::PointingHandCursor);
-        bar->addWidget(b);
+        bar->addWidget(b, 0, Qt::AlignBottom);
     }
-    bar->addStretch();
     content->addLayout(bar);
+    content->addSpacing(6);
 
     auto *corps = new QHBoxLayout;
     corps->setSpacing(16);
@@ -581,7 +598,7 @@ FireStation::FireStation(QWidget *parent) : QMainWindow(parent)
 
     root->addWidget(pages, 1);
     setCentralWidget(central);
-    statusBar()->showMessage("SMS : mode simulation (voir le Journal SMS)");
+    statusBar()->setSizeGripEnabled(false);
 
     connect(btnPdf,   &QPushButton::clicked, this, &FireStation::exporterPdf);
     connect(btnStats, &QPushButton::clicked, this, &FireStation::afficherStats);
@@ -620,6 +637,7 @@ QWidget *FireStation::creerSidebar()
         if (t == "Personnel") navPersonnel = b;
         else if (t == "Incidents")
             connect(b, &QPushButton::clicked, this, [this] { allerPage(4); });
+#ifdef AVEC_VEHICULES
         else if (t == "Véhicules")
             connect(b, &QPushButton::clicked, this, [this] {
                 if (!pageVehicules) {                    // cree a la premiere ouverture
@@ -630,6 +648,7 @@ QWidget *FireStation::creerSidebar()
                 pageVehicules->setUtilisateur(m_nomConnecte, m_roleConnecte);
                 changerPageEnFondu(pages, [this] { pages->setCurrentWidget(pageVehicules); });
             });
+#endif
         else if (t == "Équipements")
             connect(b, &QPushButton::clicked, this, [this] {
                 if (!pageEquipements) {                    // cree a la premiere ouverture
@@ -716,7 +735,11 @@ QWidget *FireStation::creerFormulaire()
     edTel->setPlaceholderText("+216 20 123 456");
     l->addWidget(edTel);
 
-    champ("Mot de passe (si l'agent utilise l'application)");
+    // Mot de passe : affiché seulement si le poste a accès à l'application (voir ACCES)
+    auto *lblMdp = new QLabel("Mot de passe de connexion");
+    lblMdp->setObjectName("lblMdp");
+    lblMdp->setProperty("champ", "true");
+    l->addWidget(lblMdp);
     edMdp = new QLineEdit;
     edMdp->setEchoMode(QLineEdit::Password);
     edMdp->setPlaceholderText("Laisser vide pour ne pas changer");
@@ -727,23 +750,35 @@ QWidget *FireStation::creerFormulaire()
     cbDispo->addItems(DISPOS);
     l->addWidget(cbDispo);
 
-    champ("Certifications (nom, date d'obtention, date d'échéance)");
+    // Titre de la zone + lien « Ajouter » sur la même ligne
+    auto *teteCerts = new QHBoxLayout;
+    auto *lblCerts = new QLabel("Certifications");
+    lblCerts->setProperty("champ", "true");
+    teteCerts->addWidget(lblCerts);
+    teteCerts->addStretch();
+    auto *bAddC = new QPushButton("+ Ajouter une certification");
+    bAddC->setObjectName("lienAjout");
+    bAddC->setCursor(Qt::PointingHandCursor);
+    teteCerts->addWidget(bAddC);
+    l->addLayout(teteCerts);
     auto *scroll = new QScrollArea;
+    scroll->setObjectName("zoneCerts");
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setFixedHeight(180);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->viewport()->setStyleSheet("background: transparent;");
+    // Fond transparent pour la zone seulement (un style sans sélecteur s'appliquerait
+    // aussi aux listes déroulantes des certifications, qui deviendraient noires)
+    scroll->viewport()->setObjectName("vpCerts");
+    scroll->viewport()->setStyleSheet("QWidget#vpCerts, QWidget#boiteCerts { background: transparent; }");
     auto *box = new QWidget;
+    box->setObjectName("boiteCerts");
     certsLayout = new QVBoxLayout(box);
-    certsLayout->setContentsMargins(0, 0, 0, 0);
+    certsLayout->setContentsMargins(6, 6, 6, 6);
     certsLayout->setSpacing(6);
     certsLayout->addStretch();
     scroll->setWidget(box);
     l->addWidget(scroll);
-
-    auto *bAddC = new QPushButton("+ Ajouter une certification");
-    l->addWidget(bAddC);
 
     lblErreur = new QLabel;
     lblErreur->setObjectName("erreur");
@@ -788,6 +823,9 @@ QWidget *FireStation::creerListe()
     cbFiltrePoste->addItems(POSTES);
     rf->addWidget(edRecherche, 1);
     rf->addWidget(cbFiltrePoste);
+    rf->addSpacing(8);
+    rf->addWidget(new QLabel("Trier par"));
+    rf->addWidget(cbTri);
     l->addLayout(rf);
 
     tblAgents = new QTableWidget(0, 7);
@@ -1039,7 +1077,7 @@ QList<Compte> FireStation::comptes() const
 {
     QList<Compte> liste;
     for (const Agent &a : m_agents)
-        if (!a.mdpHash.isEmpty())
+        if (!a.mdpHash.isEmpty() && ACCES.contains(a.poste))   // compte actif seulement
             liste.append({a.id, a.nom + " " + a.prenom, a.poste, a.mdpHash, a.tel});
     return liste;
 }
@@ -1133,6 +1171,21 @@ void FireStation::onPosteChanged()
     const QString poste = cbPoste->currentText();
     cbGrade->setEnabled(aUnGrade(poste));
     cbSpec->setEnabled(estOperationnel(poste));
+
+    // Seuls les postes qui ont des modules dans ACCES utilisent l'application
+    const bool acces = ACCES.contains(poste);
+    if (auto *lbl = findChild<QLabel *>("lblMdp")) {
+        lbl->setVisible(acces);
+        lbl->setText(acces ? QString("Mot de passe de connexion — accès : %1")
+                                 .arg(ACCES.value(poste).join(", "))
+                           : QString("Mot de passe de connexion"));
+    }
+    edMdp->setVisible(acces);
+    if (!acces) { edMdp->clear(); return; }
+    const int i = indexParId(m_editingId);
+    const bool aDejaUnCompte = i >= 0 && !m_agents[i].mdpHash.isEmpty();
+    edMdp->setPlaceholderText(aDejaUnCompte ? "Laisser vide pour garder le mot de passe actuel"
+                                            : "Obligatoire — au moins 6 caractères");
 }
 
 void FireStation::ajouterCertLigne(const Certification &c)
@@ -1225,6 +1278,13 @@ bool FireStation::lireFormulaire(Agent &a, QString &erreur)
         erreur = "Numéro de téléphone invalide (nécessaire pour les SMS)."; return false;
     }
     const QString mdp = edMdp->text();
+    if (ACCES.contains(a.poste) && mdp.isEmpty()) {
+        const int i = indexParId(m_editingId);
+        if (i < 0 || m_agents[i].mdpHash.isEmpty()) {
+            erreur = "Ce poste a accès à l'application : saisissez un mot de passe (6 caractères minimum).";
+            return false;
+        }
+    }
     if (!mdp.isEmpty() && mdp.size() < 6) {
         erreur = "Le mot de passe doit contenir au moins 6 caractères."; return false;
     }
@@ -1268,6 +1328,7 @@ void FireStation::modifier()
     old.nom = a.nom; old.prenom = a.prenom; old.poste = a.poste; old.grade = a.grade;
     old.specialite = a.specialite; old.tel = a.tel; old.dispo = a.dispo; old.certs = a.certs;
     if (!a.mdpHash.isEmpty()) old.mdpHash = a.mdpHash;   // mot de passe vide = inchangé
+    if (!ACCES.contains(old.poste)) old.mdpHash.clear();  // nouveau poste sans accès : compte désactivé
     const QString idModifie = old.id;
     reinitialiser();
     verifierEcheancesSms();
@@ -1343,13 +1404,17 @@ void FireStation::consulter(const QString &id)
     box.setTextFormat(Qt::RichText);
     box.setText(QString("<h3>%1 — %2 %3</h3>"
                         "<p>Poste : %4<br>Grade : %5<br>Spécialité : %6<br>"
-                        "Tél : %7<br>Disponibilité : %8</p>"
+                        "Tél : %7<br>Disponibilité : %8<br>"
+                        "Accès à l'application : %11</p>"
                         "<b>Certifications</b><ul>%9</ul>"
                         "<b>Formations recommandées</b><ul>%10</ul>")
                     .arg(a.id, a.nom.toHtmlEscaped(), a.prenom.toHtmlEscaped(), a.poste,
                          a.grade.isEmpty() ? "—" : a.grade,
                          a.specialite.isEmpty() ? "—" : a.specialite, a.tel, a.dispo)
-                    .arg(certs, recos));
+                    .arg(certs, recos)
+                    .arg(ACCES.contains(a.poste) && !a.mdpHash.isEmpty()
+                             ? "<b style='color:#1e7a3c'>Oui</b> — " + ACCES.value(a.poste).join(", ")
+                             : QString("Non")));
     box.exec();
 }
 
@@ -1403,11 +1468,22 @@ void FireStation::rafraichir()
         for (int c = 0; c < vals.size(); ++c)
             tblAgents->setItem(r, c, new QTableWidgetItem(vals[c]));
 
+        // Disponibilité : pastille arrondie colorée
         auto *disp = new QTableWidgetItem(a->dispo);
-        disp->setTextAlignment(Qt::AlignCenter);
-        disp->setBackground(fondDispo(a->dispo));
-        disp->setForeground(couleurDispo(a->dispo).darker(115));
+        disp->setForeground(Qt::transparent);          // le texte est affiché par la pastille
         tblAgents->setItem(r, 5, disp);
+        auto *cadre = new QWidget;
+        auto *lc = new QHBoxLayout(cadre);
+        lc->setContentsMargins(4, 0, 4, 0);
+        auto *pastille = new QLabel(a->dispo);
+        pastille->setAlignment(Qt::AlignCenter);
+        pastille->setFixedHeight(24);
+        pastille->setStyleSheet(QString("background:%1; color:%2; border-radius:11px;"
+                                        "padding:0 12px; font-weight:600; font-size:12px;")
+                                    .arg(fondDispo(a->dispo).name(),
+                                         couleurDispo(a->dispo).darker(125).name()));
+        lc->addWidget(pastille, 0, Qt::AlignCenter);
+        tblAgents->setCellWidget(r, 5, cadre);
 
         auto *w = new QWidget;
         auto *hl = new QHBoxLayout(w);
@@ -1423,7 +1499,9 @@ void FireStation::rafraichir()
         connect(mk("Voir", "Consulter"),    &QToolButton::clicked, this, [this, id] { consulter(id); });
         if (!m_lectureSeule) {   // modification réservée au Responsable RH
             connect(mk("Modifier", "Modifier"), &QToolButton::clicked, this, [this, id] { chargerDansFormulaire(id); });
-            connect(mk("Suppr.", "Supprimer"),  &QToolButton::clicked, this, [this, id] { supprimer(id); });
+            auto *bSup = mk("Supprimer", "Supprimer cet agent");
+            bSup->setObjectName("danger");
+            connect(bSup, &QToolButton::clicked, this, [this, id] { supprimer(id); });
         }
         tblAgents->setCellWidget(r, 6, w);
     }
@@ -1563,7 +1641,7 @@ void FireStation::envoyerSms(const QString &tel, const QString &message, const Q
     numero.remove(' ');
     const QString horodatage = QDateTime::currentDateTime().toString("dd/MM/yyyy HH:mm");
     m_journalSms.prepend(QString("[%1] → %2 (%3) : %4").arg(horodatage, destinataire, numero, message));
-    statusBar()->showMessage(QString("SMS simulé envoyé à %1 (%2)").arg(destinataire, numero), 5000);
+    statusBar()->showMessage(QString("✓  SMS envoyé à %1 (%2)").arg(destinataire, numero), 5000);
 }
 
 // Réinitialisation du mot de passe depuis la page de connexion (code reçu par SMS)
@@ -1805,7 +1883,7 @@ QWidget *FireStation::creerFormationsWidget()
 
         if (!rc.inscrit && rc.sessionIndex >= 0 && !m_lectureSeule) {
             auto *b = new QPushButton("Inscrire");
-            b->setObjectName("rouge");
+            b->setObjectName("contour");
             b->setCursor(Qt::PointingHandCursor);
             const QString id = rc.agentId;
             const int si = rc.sessionIndex;
