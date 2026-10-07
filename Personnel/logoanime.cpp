@@ -24,6 +24,17 @@ LogoAnime::LogoAnime(const QString &cheminImage, bool intro, bool rond, QWidget 
     setAttribute(Qt::WA_TranslucentBackground);
     m_source = QImage(cheminImage).convertToFormat(QImage::Format_ARGB32);
 
+    // Le fond du PNG est un blanc cassé (254,254,254) : on le rend blanc pur
+    // pour qu'aucun carré ne se voie à l'intérieur du cercle blanc.
+    for (int y = 0; y < m_source.height(); ++y) {
+        auto *ligne = reinterpret_cast<QRgb *>(m_source.scanLine(y));
+        for (int x = 0; x < m_source.width(); ++x) {
+            const QRgb c = ligne[x];
+            if (qRed(c) >= 245 && qGreen(c) >= 245 && qBlue(c) >= 245)
+                ligne[x] = qRgba(255, 255, 255, qAlpha(c));
+        }
+    }
+
     // Découpe de la flamme avec des bords progressivement transparents (ellipse douce)
     if (!m_source.isNull()) {
         const double k = m_source.width() / REF;

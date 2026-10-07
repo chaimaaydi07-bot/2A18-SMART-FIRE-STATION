@@ -1,12 +1,15 @@
 #include "pageconnexion.h"
 #include "logoanime.h"
 
+#include <QCheckBox>
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QGridLayout>
 #include <QInputDialog>
+#include <QLocale>
 #include <QMessageBox>
 #include <QRandomGenerator>
 #include <QFrame>
@@ -25,32 +28,51 @@ const int DUREE_BLOCAGE_S  = 30;   // durée du blocage en secondes
 const int VALIDITE_CODE_S  = 300;  // le code reçu par SMS est valable 5 minutes
 
 const char *STYLE_CONNEXION = R"(
-PageConnexion { background: #f4f2ef; }
-#panneau { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-    stop:0 #27050c, stop:0.32 #59101a, stop:0.68 #a71928, stop:1 #d53d39); }
+PageConnexion { background: #f6f4f1; }
+
+/* ---- Panneau gauche (identité de l'USPC) ---- */
+#panneau { background: #3a0b12; border-top: 6px solid #b3211c; }
 #panneau QLabel { color: white; background: transparent; }
-#panneau QLabel#logoRond { background: white; border-radius: 110px; }
-#titreApp { font-size: 26px; font-weight: bold; }
-#sousTitreApp { font-size: 14px; color: rgba(255,255,255,0.85); }
-#carte { background: white; border: 1px solid #e4e0da; border-radius: 12px; }
-#carte QLabel { background: transparent; color: #222; }
-#carte QLabel#titreConnexion { font-size: 24px; font-weight: bold; }
-#carte QLabel#aide { color: #777; font-size: 12px; }
-#carte QLabel#etiquette { color: #555; font-size: 12px; font-weight: bold; }
+#panneau QFrame#barreRouge { background: #b3211c; border-radius: 2px; }
+#panneau QLabel#sigle { font-size: 22px; font-weight: bold; letter-spacing: 2px; }
+#panneau QLabel#tutelle { font-size: 12px; color: #e9c9c6; }
+#panneau QLabel#nomComplet { font-size: 30px; font-weight: bold; }
+#panneau QLabel#presentation { font-size: 15px; color: #f1dcda; }
+#panneau QLabel#puce { border: 1px solid rgba(255,255,255,0.22); border-radius: 8px;
+                       padding: 8px 12px; font-size: 13px; }
+#panneau QLabel#infoSysteme { font-size: 12px; color: #e9c9c6; }
+#panneau QFrame#anneau { background: rgba(255,255,255,0.08); border-radius: 102px; }
+
+/* ---- Partie droite ---- */
+QLabel#date { color: #5c5650; font-size: 13px; }
+QLabel#langue { background: white; border: 1px solid #d9d3cc; border-radius: 8px;
+                padding: 6px 12px; font-weight: bold; color: #1e1b19; }
+#carte { background: white; border: 1px solid #e4ded7; border-radius: 14px; }
+#carte QLabel { background: transparent; color: #1e1b19; }
+#carte QLabel#surtitre { color: #9e1b17; font-size: 11px; font-weight: bold; letter-spacing: 2px; }
+#carte QLabel#titreConnexion { font-size: 28px; font-weight: bold; }
+#carte QLabel#aide { color: #5c5650; font-size: 13px; }
+#carte QLabel#etiquette { color: #1e1b19; font-size: 13px; font-weight: bold; }
 #carte QLabel#erreurConnexion { color: #b3211c; font-size: 12px; }
-QLineEdit { background: #faf9f7; border: 1px solid #e4e0da; border-radius: 6px;
-            padding: 8px 10px; font-size: 14px; color: #222; }
-QLineEdit:focus { border: 1px solid #f2a10c; background: white; }
+#carte QFrame#avertissement { background: #fbf3e4; border: 1px solid #f0ddb8; border-radius: 9px; }
+#carte QLabel#texteAvertissement { color: #5a4520; font-size: 12px; }
+QLabel#mention { color: #6b645d; font-size: 12px; }
+QLabel#piedPage { color: #8a847e; font-size: 11px; }
+QLineEdit { background: #faf8f6; border: 1px solid #d9d3cc; border-radius: 9px;
+            padding: 0 12px; min-height: 44px; font-size: 14px; color: #1e1b19; }
+QLineEdit:focus { border: 1px solid #b3211c; background: white; }
 QLineEdit:disabled { color: #aaa; }
-QToolButton { background: white; border: 1px solid #e4e0da; border-radius: 6px; padding: 6px 10px; color: #222; }
-QToolButton:hover { border: 1px solid #f2a10c; }
-QPushButton#btnConnexion { background: #b3211c; color: white; border: none; border-radius: 6px;
-                           padding: 10px; font-size: 15px; font-weight: bold; }
-QPushButton#btnConnexion:hover { background: #d02a24; }
+QToolButton#oeil { background: transparent; border: none; color: #9e1b17;
+                   font-weight: bold; padding: 6px 10px; }
+QToolButton#oeil:hover { color: #6e0f0c; }
+QCheckBox { color: #3d3833; font-size: 13px; spacing: 8px; }
+QPushButton#btnConnexion { background: #b3211c; color: white; border: none; border-radius: 9px;
+                           min-height: 48px; font-size: 15px; font-weight: bold; }
+QPushButton#btnConnexion:hover { background: #9e1b17; }
 QPushButton#btnConnexion:disabled { background: #d9a09d; }
-QPushButton#lienOubli { background: transparent; border: none; color: #b3211c;
-                        font-size: 12px; text-decoration: underline; }
-QPushButton#lienOubli:hover { color: #d02a24; }
+QPushButton#lienOubli { background: transparent; border: none; color: #9e1b17;
+                        font-size: 13px; font-weight: bold; }
+QPushButton#lienOubli:hover { color: #6e0f0c; text-decoration: underline; }
 )";
 }
 
@@ -63,88 +85,204 @@ PageConnexion::PageConnexion(QWidget *parent) : QWidget(parent)
     racine->setContentsMargins(0, 0, 0, 0);
     racine->setSpacing(0);
 
-    // --- Panneau gauche : logo et nom de l'application
+    // =====================================================================
+    //  Panneau gauche : identité de l'USPC
+    // =====================================================================
     auto *panneau = new QFrame;
     panneau->setObjectName("panneau");
-    panneau->setMinimumWidth(420);
+    panneau->setMinimumWidth(440);
     auto *lp = new QVBoxLayout(panneau);
-    lp->setContentsMargins(40, 40, 40, 40);
-    lp->addStretch();
+    lp->setContentsMargins(48, 36, 48, 32);
+    lp->setSpacing(0);
+
+    // En-tête officiel : barre rouge + sigle + organisme de tutelle
+    auto *entete = new QHBoxLayout;
+    entete->setSpacing(12);
+    auto *barre = new QFrame;
+    barre->setObjectName("barreRouge");
+    barre->setFixedSize(4, 40);
+    entete->addWidget(barre);
+    auto *blocNom = new QVBoxLayout;
+    blocNom->setSpacing(0);
+    auto *sigle = new QLabel("USPC");
+    sigle->setObjectName("sigle");
+    auto *tutelle = new QLabel("Office National de la Protection Civile");
+    tutelle->setObjectName("tutelle");
+    blocNom->addWidget(sigle);
+    blocNom->addWidget(tutelle);
+    entete->addLayout(blocNom);
+    entete->addStretch();
+    lp->addLayout(entete);
+    lp->addStretch(2);
+
+    // Logo animé, centré, dans un léger anneau
+    auto *anneau = new QFrame;
+    anneau->setObjectName("anneau");
+    anneau->setFixedSize(204, 204);
+    auto *la = new QVBoxLayout(anneau);
+    la->setContentsMargins(10, 10, 10, 10);
     auto *logo = new LogoAnime(":/logo_USPC.png", true, true);   // logo animé et net
-    logo->setFixedSize(220, 220);
-    lp->addWidget(logo, 0, Qt::AlignHCenter);
-    lp->addSpacing(24);
-    auto *titre = new QLabel("Smart Fire Station");
-    titre->setObjectName("titreApp");
-    titre->setAlignment(Qt::AlignCenter);
-    lp->addWidget(titre);
-    auto *sousTitre = new QLabel("Unité Spéciale de la Protection Civile");
-    sousTitre->setObjectName("sousTitreApp");
-    sousTitre->setAlignment(Qt::AlignCenter);
-    lp->addWidget(sousTitre);
-    lp->addStretch();
+    logo->setFixedSize(184, 184);
+    la->addWidget(logo);
+    lp->addWidget(anneau, 0, Qt::AlignHCenter);
+    lp->addSpacing(28);
+
+    auto *nomComplet = new QLabel("Unité Spéciale de la\nProtection Civile");
+    nomComplet->setObjectName("nomComplet");
+    lp->addWidget(nomComplet);
+    lp->addSpacing(10);
+    auto *presentation = new QLabel("Plateforme interne de gestion de la caserne : incidents, "
+                                    "véhicules, équipements, personnel et formation.");
+    presentation->setObjectName("presentation");
+    presentation->setWordWrap(true);
+    presentation->setMaximumWidth(420);
+    lp->addWidget(presentation);
+    lp->addSpacing(22);
+
+    // Les 5 modules de l'application
+    auto *grilleModules = new QGridLayout;
+    grilleModules->setHorizontalSpacing(10);
+    grilleModules->setVerticalSpacing(10);
+    const QStringList modules = {"Incidents", "Véhicules", "Équipements", "Personnel", "Formation"};
+    for (int i = 0; i < modules.size(); ++i) {
+        auto *puce = new QLabel(QString("<span style='color:#f2a10c'>●</span>&nbsp;&nbsp;%1")
+                                    .arg(modules[i]));
+        puce->setObjectName("puce");
+        grilleModules->addWidget(puce, i / 3, i % 3);
+    }
+    auto *blocModules = new QHBoxLayout;
+    blocModules->addLayout(grilleModules);
+    blocModules->addStretch();
+    lp->addLayout(blocModules);
+    lp->addStretch(3);
+
+    // Informations système
+    auto *infos = new QLabel("<span style='color:#4cc38a'>●</span>&nbsp; Système opérationnel"
+                             "&nbsp;&nbsp;&nbsp;&nbsp;Base de Naassen, Ben Arous"
+                             "&nbsp;&nbsp;&nbsp;&nbsp;Version 1.0");
+    infos->setObjectName("infoSysteme");
+    lp->addWidget(infos);
     racine->addWidget(panneau, 2);
 
-    // --- Partie droite : carte de connexion centrée
+    // =====================================================================
+    //  Partie droite : date, carte de connexion, mentions
+    // =====================================================================
     auto *droite = new QWidget;
     auto *ld = new QVBoxLayout(droite);
+    ld->setContentsMargins(40, 24, 40, 24);
+
+    auto *barreHaut = new QHBoxLayout;
+    barreHaut->addStretch();
+    QString texteDate = QLocale(QLocale::French).toString(QDate::currentDate(), "dddd d MMMM yyyy");
+    texteDate[0] = texteDate[0].toUpper();
+    auto *date = new QLabel(texteDate);
+    date->setObjectName("date");
+    barreHaut->addWidget(date);
+    ld->addLayout(barreHaut);
     ld->addStretch();
+
     auto *carte = new QFrame;
     carte->setObjectName("carte");
-    carte->setFixedWidth(400);
+    carte->setFixedWidth(440);
     auto *lc = new QVBoxLayout(carte);
-    lc->setContentsMargins(32, 32, 32, 32);
+    lc->setContentsMargins(36, 34, 36, 30);
     lc->setSpacing(6);
 
+    auto *surtitre = new QLabel("ESPACE AGENT");
+    surtitre->setObjectName("surtitre");
+    lc->addWidget(surtitre);
     auto *titreC = new QLabel("Connexion");
     titreC->setObjectName("titreConnexion");
     lc->addWidget(titreC);
-    auto *aide = new QLabel("Connectez-vous avec votre identifiant d'agent.");
+    auto *aide = new QLabel("Utilisez votre identifiant d'agent et votre mot de passe.");
     aide->setObjectName("aide");
+    aide->setWordWrap(true);
     lc->addWidget(aide);
-    lc->addSpacing(16);
+    lc->addSpacing(14);
 
-    auto *e1 = new QLabel("Identifiant");
+    auto *e1 = new QLabel("Identifiant d'agent");
     e1->setObjectName("etiquette");
     lc->addWidget(e1);
     edIdentifiant = new QLineEdit;
     edIdentifiant->setPlaceholderText("ex. AGT-018");
     lc->addWidget(edIdentifiant);
-    lc->addSpacing(8);
+    lc->addSpacing(10);
 
     auto *e2 = new QLabel("Mot de passe");
     e2->setObjectName("etiquette");
     lc->addWidget(e2);
     auto *ligneMdp = new QHBoxLayout;
+    ligneMdp->setSpacing(4);
     edMdp = new QLineEdit;
     edMdp->setEchoMode(QLineEdit::Password);
     edMdp->setPlaceholderText("Mot de passe");
     btnOeil = new QToolButton;
+    btnOeil->setObjectName("oeil");
     btnOeil->setText("Afficher");
     btnOeil->setCursor(Qt::PointingHandCursor);
     ligneMdp->addWidget(edMdp, 1);
     ligneMdp->addWidget(btnOeil);
     lc->addLayout(ligneMdp);
+    lc->addSpacing(6);
 
-    lblErreur = new QLabel;
-    lblErreur->setObjectName("erreurConnexion");
-    lblErreur->setWordWrap(true);
-    lblErreur->setMinimumHeight(34);
-    lc->addWidget(lblErreur);
-
-    btnConnexion = new QPushButton("Se connecter");
-    btnConnexion->setObjectName("btnConnexion");
-    btnConnexion->setCursor(Qt::PointingHandCursor);
-    lc->addWidget(btnConnexion);
-    lc->addSpacing(8);
+    // Se souvenir de moi + mot de passe oublié
+    auto *ligneOptions = new QHBoxLayout;
+    auto *souvenir = new QCheckBox("Se souvenir de moi");
+    souvenir->setObjectName("souvenir");
+    souvenir->setCursor(Qt::PointingHandCursor);
+    ligneOptions->addWidget(souvenir);
+    ligneOptions->addStretch();
     auto *oubli = new QPushButton("Mot de passe oublié ?");
     oubli->setObjectName("lienOubli");
     oubli->setCursor(Qt::PointingHandCursor);
     connect(oubli, &QPushButton::clicked, this, &PageConnexion::motDePasseOublie);
-    lc->addWidget(oubli, 0, Qt::AlignHCenter);
+    ligneOptions->addWidget(oubli);
+    lc->addLayout(ligneOptions);
+
+    lblErreur = new QLabel;
+    lblErreur->setObjectName("erreurConnexion");
+    lblErreur->setWordWrap(true);
+    lblErreur->setMinimumHeight(28);
+    lc->addWidget(lblErreur);
+
+    btnConnexion = new QPushButton("Se connecter  →");
+    btnConnexion->setObjectName("btnConnexion");
+    btnConnexion->setCursor(Qt::PointingHandCursor);
+    lc->addWidget(btnConnexion);
+    lc->addSpacing(14);
+
+    // Rappel de la règle de sécurité
+    auto *avert = new QFrame;
+    avert->setObjectName("avertissement");
+    auto *lav = new QHBoxLayout(avert);
+    lav->setContentsMargins(12, 10, 12, 10);
+    auto *texteAvert = new QLabel(QString("Après %1 tentatives incorrectes, l'accès est bloqué "
+                                          "pendant %2 secondes.")
+                                      .arg(MAX_TENTATIVES).arg(DUREE_BLOCAGE_S));
+    texteAvert->setObjectName("texteAvertissement");
+    texteAvert->setWordWrap(true);
+    texteAvert->setMinimumHeight(36);   // deux lignes visibles en entier
+    lav->addWidget(texteAvert);
+    lc->addWidget(avert);
 
     ld->addWidget(carte, 0, Qt::AlignHCenter);
+    ld->addSpacing(16);
+    auto *mention = new QLabel("Accès réservé au personnel autorisé de l'USPC.\n"
+                               "Pas encore de compte ? Contactez le Responsable RH.");
+    mention->setObjectName("mention");
+    mention->setAlignment(Qt::AlignCenter);
+    ld->addWidget(mention, 0, Qt::AlignHCenter);
     ld->addStretch();
+
+    auto *pied = new QHBoxLayout;
+    auto *copyright = new QLabel("© 2026 Unité Spéciale de la Protection Civile");
+    copyright->setObjectName("piedPage");
+    auto *usage = new QLabel("Application de bureau — usage interne");
+    usage->setObjectName("piedPage");
+    pied->addWidget(copyright);
+    pied->addStretch();
+    pied->addWidget(usage);
+    ld->addLayout(pied);
     racine->addWidget(droite, 3);
 
     // --- Minuteur du blocage (décompte chaque seconde)
@@ -184,12 +322,15 @@ void PageConnexion::setComptes(const QList<Compte> &comptes)
 
 void PageConnexion::reinitialiser()
 {
-    edIdentifiant->clear();
+    // « Se souvenir de moi » coché : on garde l'identifiant pour la prochaine connexion
+    auto *souvenir = findChild<QCheckBox *>("souvenir");
+    const bool garderId = souvenir && souvenir->isChecked() && !edIdentifiant->text().isEmpty();
+    if (!garderId) edIdentifiant->clear();
     edMdp->clear();
     edMdp->setEchoMode(QLineEdit::Password);
     btnOeil->setText("Afficher");
     if (!m_minuteur->isActive()) lblErreur->clear();
-    edIdentifiant->setFocus();
+    if (garderId) edMdp->setFocus(); else edIdentifiant->setFocus();
 }
 
 void PageConnexion::afficherMasquerMdp()

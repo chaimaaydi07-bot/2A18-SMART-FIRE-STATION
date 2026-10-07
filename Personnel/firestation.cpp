@@ -27,6 +27,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPdfWriter>
+#include <QPointer>
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -42,6 +43,7 @@
 #include <QVBoxLayout>
 #include <QVariantAnimation>
 #include <algorithm>
+#include <functional>
 
 namespace {
 
@@ -153,6 +155,95 @@ void animerProgression(QWidget *w, double *prog, int ms, int delai = 0)
         w->update();
     });
     QTimer::singleShot(delai, a, [a] { a->start(QAbstractAnimation::DeleteWhenStopped); });
+}
+
+// Transition entre les pages : fondu enchaîné.
+// On photographie l'ancienne page, on affiche la nouvelle, puis la photo de
+// l'ancienne s'efface par-dessus. Dessiner une image avec une opacité est très
+// léger pour Qt : l'animation reste fluide (et sans rectangle noir).
+class CalqueFondu : public QWidget
+{
+public:
+    CalqueFondu(const QPixmap &image, QWidget *parent) : QWidget(parent), m_image(image)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setGeometry(parent->rect());
+    }
+    void setOpacite(qreal o) { m_opacite = o; update(); }
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setOpacity(m_opacite);
+        p.drawPixmap(rect(), m_image);
+    }
+private:
+    QPixmap m_image;
+    qreal   m_opacite = 1.0;
+};
+
+void changerPageEnFondu(QStackedWidget *pages, const std::function<void()> &changer, int ms = 260)
+{
+    QWidget *avant = pages->currentWidget();
+    if (!avant || !pages->isVisible()) { changer(); return; }
+    const QPixmap photo = avant->grab();
+    changer();
+    if (pages->currentWidget() == avant) return;      // même page : pas de transition
+    auto *calque = new CalqueFondu(photo, pages);
+    calque->show();
+    calque->raise();
+    auto *a = new QVariantAnimation(calque);
+    a->setDuration(ms);
+    a->setStartValue(1.0);
+    a->setEndValue(0.0);
+    a->setEasingCurve(QEasingCurve::InOutQuad);
+    QObject::connect(a, &QVariantAnimation::valueChanged, calque,
+                     [calque](const QVariant &v) { calque->setOpacite(v.toDouble()); });
+    QObject::connect(a, &QVariantAnimation::finished, calque, &QObject::deleteLater);
+    a->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+// Confirmation visuelle : la ligne de l'agent ajouté ou modifié s'allume en
+// orange clair, puis revient doucement à sa couleur normale.
+void surlignerLigne(QTableWidget *t, const QString &id)
+{
+    int ligne = -1;
+    for (int r = 0; r < t->rowCount(); ++r)
+        if (t->item(r, 0) && t->item(r, 0)->text() == id) { ligne = r; break; }
+    if (ligne < 0) return;
+    t->scrollToItem(t->item(ligne, 0));
+
+    const int nbCol = 6;   // colonnes texte (la colonne Action contient des boutons)
+    QList<QColor> origine;
+    for (int c = 0; c < nbCol; ++c) {
+        const QBrush b = t->item(ligne, c)->background();
+        origine << (b.style() == Qt::NoBrush ? t->palette().base().color() : b.color());
+    }
+    const QColor surbrillance("#fde7b0");
+
+    QPointer<QTableWidget> tp(t);
+    auto *a = new QVariantAnimation(t);
+    a->setDuration(1600);
+    a->setStartValue(0.0);
+    a->setEndValue(1.0);
+    a->setEasingCurve(QEasingCurve::InQuad);
+    auto appliquer = [tp, ligne, id, origine, surbrillance, nbCol](double v, bool fin) {
+        if (!tp || ligne >= tp->rowCount() || !tp->item(ligne, 0)
+            || tp->item(ligne, 0)->text() != id) return;   // le tableau a changé entre-temps
+        for (int c = 0; c < nbCol; ++c) {
+            const QColor o = origine[c];
+            const QColor m(int(surbrillance.red()   + (o.red()   - surbrillance.red())   * v),
+                           int(surbrillance.green() + (o.green() - surbrillance.green()) * v),
+                           int(surbrillance.blue()  + (o.blue()  - surbrillance.blue())  * v));
+            if (fin && c < 5) tp->item(ligne, c)->setBackground(QBrush());   // fond d'origine
+            else              tp->item(ligne, c)->setBackground(fin ? o : m);
+        }
+    };
+    QObject::connect(a, &QVariantAnimation::valueChanged, t,
+                     [appliquer](const QVariant &v) { appliquer(v.toDouble(), false); });
+    QObject::connect(a, &QVariantAnimation::finished, t, [appliquer] { appliquer(1.0, true); });
+    appliquer(0.0, false);
+    QTimer::singleShot(250, a, [a] { a->start(QAbstractAnimation::DeleteWhenStopped); });
 }
 
 // ----------------------------------------------------------------------------
@@ -536,7 +627,7 @@ QWidget *FireStation::creerSidebar()
                     pages->addWidget(pageEquipements);
                 }
                 pageEquipements->setUtilisateur(m_nomConnecte, m_roleConnecte);
-                pages->setCurrentWidget(pageEquipements);
+                changerPageEnFondu(pages, [this] { pages->setCurrentWidget(pageEquipements); });
             });
         else connect(b, &QPushButton::clicked, this, [this, t] {
                 lblAVenir->setText(QString("Module %1\n\n(ajouté lors de l'intégration)").arg(t));
@@ -716,8 +807,10 @@ QWidget *FireStation::creerListe()
 
 void FireStation::allerPage(int index)
 {
-    pages->setCurrentIndex(index);
-    pages->currentWidget()->update();   // redessine immédiatement la nouvelle page
+    changerPageEnFondu(pages, [this, index] {   // fondu enchaîné entre les pages
+        pages->setCurrentIndex(index);
+        pages->currentWidget()->update();
+    });
 }
 
 // ============================================================================
@@ -1151,6 +1244,7 @@ void FireStation::ajouter()
     reinitialiser();
     verifierEcheancesSms();
     rafraichir();
+    surlignerLigne(tblAgents, a.id);   // confirmation visuelle
 }
 
 void FireStation::modifier()
@@ -1163,9 +1257,11 @@ void FireStation::modifier()
     old.nom = a.nom; old.prenom = a.prenom; old.poste = a.poste; old.grade = a.grade;
     old.specialite = a.specialite; old.tel = a.tel; old.dispo = a.dispo; old.certs = a.certs;
     if (!a.mdpHash.isEmpty()) old.mdpHash = a.mdpHash;   // mot de passe vide = inchangé
+    const QString idModifie = old.id;
     reinitialiser();
     verifierEcheancesSms();
     rafraichir();
+    surlignerLigne(tblAgents, idModifie);   // confirmation visuelle
 }
 
 void FireStation::reinitialiser()
