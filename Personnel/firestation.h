@@ -163,7 +163,7 @@ private:
     QPushButton  *btnAjouter = nullptr, *btnModifier = nullptr;
 
     // liste
-    QComboBox    *cbTri = nullptr, *cbFiltrePoste = nullptr;
+    QComboBox    *cbTri = nullptr, *cbFiltrePoste = nullptr, *cbCritere = nullptr;
     QLineEdit    *edRecherche = nullptr;
     QTableWidget *tblAgents = nullptr;
     QVBoxLayout  *alertesLayout = nullptr;

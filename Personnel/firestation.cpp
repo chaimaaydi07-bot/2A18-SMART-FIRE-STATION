@@ -30,6 +30,8 @@
 #include <QPageSize>
 #include <QPainter>
 #include <QPainterPath>
+#include <QRegion>
+#include <QEvent>
 #include <QPdfWriter>
 #include <QPointer>
 #include <QPropertyAnimation>
@@ -73,6 +75,9 @@ const QStringList SPECIALITES = {"Sauvetage-déblaiement", "Recherche cynophile"
                                  "Risques chimiques (NRBC)", "Secourisme",
                                  "Lutte contre l'incendie"};
 const QStringList DISPOS = {"Disponible", "En intervention", "En formation", "En repos", "En congé"};
+// Critères différents pour la recherche et pour le tri
+const QStringList CRITERES_RECHERCHE = {"Nom", "Téléphone", "Certification"};
+const QStringList CRITERES_TRI       = {"Disponibilité", "Grade", "Spécialité"};
 
 // Noms des certifications (identiques dans les fiches agents et le catalogue)
 const QString C_PSE1  = "PSE1 — Premiers secours";
@@ -119,7 +124,7 @@ QColor couleurDispo(const QString &d)
 
 QColor fondDispo(const QString &d)
 {
-    if (d == "Disponible")      return QColor("#dff3e5");
+    if (d == "Disponible")      return QColor("#d7f4df");   // même vert que le module Incidents
     if (d == "En intervention") return QColor("#fdebd0");
     if (d == "En formation")    return QColor("#e3eefa");
     return QColor("#eeeeee");
@@ -129,6 +134,24 @@ QColor fondDispo(const QString &d)
 //  Animations
 // ----------------------------------------------------------------------------
 // Apparition en fondu d'un widget (avec un délai optionnel pour les effets en cascade)
+// Coins arrondis d'un tableau : le widget est découpé selon un rectangle arrondi
+class CoinsArrondis : public QObject {
+public:
+    CoinsArrondis(QWidget *w, int rayon) : QObject(w), m_rayon(rayon) { w->installEventFilter(this); }
+protected:
+    bool eventFilter(QObject *o, QEvent *e) override {
+        if (e->type() == QEvent::Resize) {
+            auto *w = static_cast<QWidget *>(o);
+            QPainterPath chemin;
+            chemin.addRoundedRect(QRectF(w->rect()), m_rayon, m_rayon);
+            w->setMask(QRegion(chemin.toFillPolygon().toPolygon()));
+        }
+        return false;
+    }
+private:
+    int m_rayon;
+};
+
 void fondu(QWidget *w, int ms = 400, int delai = 0)
 {
     auto *eff = new QGraphicsOpacityEffect(w);
@@ -443,7 +466,7 @@ const char *STYLE = R"(
 QWidget { color: #222; }
 QComboBox QFrame { background: white; }
 QComboBox QAbstractItemView { background: white; color: #222;
-    selection-background-color: #f2a10c; selection-color: #222; }
+    selection-background-color: #ffe5e7; selection-color: #64131d; }
 QTableWidget { color: #222; }
 QCalendarWidget QWidget { color: #222; background: white; }
 QMainWindow, #main { background: #f4f2ef; }
@@ -466,10 +489,23 @@ QMainWindow, #main { background: #f4f2ef; }
 #card { background: white; border: 1px solid #e4e0da; border-radius: 10px; }
 #card QLabel { background: transparent; }
 #h3 { font-size: 16px; font-weight: bold; }
-QLabel[champ="true"] { color: #777; font-size: 12px; }
-QLineEdit, QComboBox, QDateEdit { background: #faf9f7; border: 1px solid #e4e0da;
-    border-radius: 6px; padding: 6px 8px; min-height: 20px; }
-QLineEdit:focus, QComboBox:focus, QDateEdit:focus { border: 1px solid #f2a10c; background: white; }
+QLabel[champ="true"] { color: #302934; font-size: 12px; font-weight: 700; }
+QLineEdit, QComboBox, QDateEdit { background: #fbfbfc; color: #302934; border: 2px solid #dfe2e7;
+    border-radius: 9px; padding: 5px 8px; min-height: 20px; }
+QLineEdit:focus, QComboBox:focus, QDateEdit:focus { border: 2px solid #bd1e2c; background: white; }
+#titreForm { color: #981a27; font-size: 20px; font-weight: 800; }
+#sousForm { color: #777984; font-size: 12px; }
+QPushButton#primaire, QPushButton#contourForm, QPushButton#reinit {
+    border-radius: 10px; padding: 9px 14px; font-weight: 700; }
+QPushButton#primaire { color: white; background: #b51c2a; border: 2px solid #8f1420; }
+QPushButton#primaire:hover { background: #cf2635; }
+QPushButton#primaire:disabled { background: #e3a9af; border: 2px solid #d9959c; color: white; }
+QPushButton#contourForm { color: #a61725; background: white; border: 2px solid #c94d59; }
+QPushButton#contourForm:hover { background: #fff1f2; }
+QPushButton#contourForm:disabled { color: #c9a3a7; border: 2px solid #ead0d3; }
+QPushButton#reinit { color: #981a27; background: #fff0f1; border: 2px solid #e0a3aa; }
+QPushButton#reinit:hover { background: #f9dce0; }
+QHeaderView { background: #5b1722; border: none; }
 QComboBox:disabled { color: #aaa; }
 #certRow { background: #faf9f7; border: 1px solid #e4e0da; border-radius: 8px; }
 #certRow QLabel { background: transparent; }
@@ -485,9 +521,9 @@ QPushButton#rouge  { background: #b3211c; border: none; font-weight: bold; color
 QPushButton#rouge:hover { background: #d02a24; }
 QPushButton#rouge:disabled { background: #d9a09d; }
 QPushButton#retour { color: #b3211c; font-weight: bold; border: 1px solid #e8b4b1; }
-QPushButton#secondaire { background: white; color: #3a0b12; font-weight: 600;
-    border: 1px solid #e0d6d3; border-radius: 8px; padding: 8px 14px; }
-QPushButton#secondaire:hover { background: #fbf1f0; border: 1px solid #b3211c; color: #b3211c; }
+QPushButton#secondaire { background: white; color: #b3211c; font-weight: bold;
+    border: 1px solid #e8b4b1; border-radius: 6px; padding: 8px 14px; }
+QPushButton#secondaire:hover { background: #fbe4e2; }
 QPushButton#contour { background: white; color: #b3211c; font-weight: bold;
     border: 1px solid #e8b4b1; border-radius: 6px; padding: 6px 14px; }
 QPushButton#contour:hover { background: #b3211c; color: white; border: 1px solid #b3211c; }
@@ -501,16 +537,29 @@ QStatusBar { background: white; color: #6b645d; border-top: 1px solid #e8e2dc; }
 QPushButton#retour:hover { background: #fbe4e2; }
 QToolButton { background: white; border: 1px solid #e4e0da; border-radius: 6px; padding: 4px 8px; }
 QToolButton:hover { background: #fdf3e1; border: 1px solid #f2a10c; }
-QTableWidget { background: white; border: none; gridline-color: transparent; }
-QTableWidget::item:hover { background: #fdf6ea; }
-QTableWidget::item:selected { background: #fde9c4; color: #222; }
-QHeaderView::section { background: white; border: none; border-bottom: 1px solid #e4e0da;
-    color: #777; font-weight: bold; padding: 6px; }
-#alerte { background: #fbe4e2; border-radius: 8px; }
-#alerteInfo { background: #e3eefa; border-radius: 8px; }
+QTableWidget { background: white; alternate-background-color: #fbf7f8;
+    border: 1px solid #e4e6ea; border-radius: 10px; gridline-color: #eceef1;
+    selection-background-color: #ffe5e7; selection-color: #302934; }
+QTableWidget::item:hover { background: #fff1f2; }
+QHeaderView::section { color: white; background: #5b1722; border: none;
+    border-right: 1px solid #762834; padding: 12px 5px; font-size: 11px; font-weight: 700; }
+QToolButton#tableAction { color: #9e1724; background: #fff4f5; border: 1px solid #efc9cd;
+    border-radius: 7px; padding: 5px 8px; }
+QToolButton#tableAction:hover { background: #f6d6da; }
+QToolButton#tableDelete { color: white; background: #8f1420; border: 1px solid #74101a;
+    border-radius: 7px; padding: 5px 8px; }
+QToolButton#tableDelete:hover { background: #c1121f; }
+#alerte { background: #fff5f4; border: 2px solid #f2c7c2; border-radius: 14px; }
+#alerteInfo { background: #f3f8fd; border: 2px solid #c9dcf2; border-radius: 14px; }
 #alerte QLabel, #alerteInfo QLabel { background: transparent; }
-#alerte QLabel#pastille { background: #b3211c; color: white; border-radius: 12px; font-weight: bold; }
+#alerte QLabel#pastille { color: #f2a10c; font-size: 26px; }
 #alerteInfo QLabel#pastilleInfo { background: #2f6fb3; color: white; border-radius: 12px; font-weight: bold; }
+#alerte QPushButton { color: white; background: #b51c2a; border: 2px solid #8f1420;
+    border-radius: 10px; padding: 8px 14px; font-weight: 700; }
+#alerte QPushButton:hover { background: #cf2635; }
+#alerteInfo QPushButton { color: #1f4f8a; background: white; border: 2px solid #9dbde3;
+    border-radius: 10px; padding: 8px 14px; font-weight: 700; }
+#alerteInfo QPushButton:hover { background: #e8f1fb; }
 #erreur { color: #b3211c; font-size: 12px; }
 #badgeUrgent { background: #fbe4e2; color: #b3211c; border-radius: 6px; padding: 2px 8px; font-weight: bold; }
 #badgeNormal { background: #fdebd0; color: #a86200; border-radius: 6px; padding: 2px 8px; font-weight: bold; }
@@ -554,7 +603,7 @@ FireStation::FireStation(QWidget *parent) : QMainWindow(parent)
     blocTitre->addWidget(etiquette("Effectif de l'unité, disponibilités, certifications et planning de garde", "sous"));
     bar->addLayout(blocTitre, 1);
     cbTri = new QComboBox;   // placé dans la barre du tableau (creerListe)
-    cbTri->addItems({"Disponibilité", "Nom", "Grade"});
+    cbTri->addItems(CRITERES_TRI);
     auto *btnPdf = new QPushButton("Planning de garde (PDF)");
     auto *btnStats = new QPushButton("Statistiques");
     auto *btnForm = new QPushButton("Formations recommandées");
@@ -691,8 +740,10 @@ QWidget *FireStation::creerFormulaire()
     l->setSpacing(4);
 
     lblFormTitle = new QLabel("＋ Nouvel agent");
-    lblFormTitle->setObjectName("h3");
+    lblFormTitle->setObjectName("titreForm");
     l->addWidget(lblFormTitle);
+    l->addWidget(etiquette("Saisir les informations de l'agent", "sousForm"));
+    l->addSpacing(6);
 
     auto champ = [&](const QString &t) {
         auto *lb = new QLabel(t);
@@ -786,10 +837,13 @@ QWidget *FireStation::creerFormulaire()
     l->addWidget(lblErreur);
 
     auto *rb = new QHBoxLayout;
-    btnAjouter = new QPushButton("+ Ajouter");
-    btnAjouter->setObjectName("rouge");
-    btnModifier = new QPushButton("Modifier");
-    auto *btnReset = new QPushButton("Réinitialiser");
+    btnAjouter = new QPushButton("＋ Ajouter");
+    btnAjouter->setObjectName("primaire");
+    btnModifier = new QPushButton("✎ Modifier");
+    btnModifier->setObjectName("contourForm");
+    auto *btnReset = new QPushButton("↺ Réinitialiser");
+    btnReset->setObjectName("reinit");
+    for (QPushButton *b : {btnAjouter, btnModifier, btnReset}) b->setCursor(Qt::PointingHandCursor);
     rb->addWidget(btnAjouter); rb->addWidget(btnModifier); rb->addWidget(btnReset);
     l->addLayout(rb);
 
@@ -816,8 +870,12 @@ QWidget *FireStation::creerListe()
     l->addWidget(etiquette("☰ Liste du personnel", "h3"));
 
     auto *rf = new QHBoxLayout;
+    rf->addWidget(new QLabel("Rechercher par"));
+    cbCritere = new QComboBox;
+    cbCritere->addItems(CRITERES_RECHERCHE);
+    rf->addWidget(cbCritere);
     edRecherche = new QLineEdit;
-    edRecherche->setPlaceholderText("Rechercher par nom, grade, spécialité ou disponibilité…");
+    edRecherche->setPlaceholderText("Saisir le nom…");
     cbFiltrePoste = new QComboBox;
     cbFiltrePoste->addItem("Tous les postes");
     cbFiltrePoste->addItems(POSTES);
@@ -832,7 +890,11 @@ QWidget *FireStation::creerListe()
     tblAgents->setHorizontalHeaderLabels({"ID", "NOM", "POSTE", "GRADE", "SPÉCIALITÉ",
                                           "DISPONIBILITÉ", "ACTION"});
     tblAgents->verticalHeader()->hide();
-    tblAgents->setShowGrid(false);
+    tblAgents->setShowGrid(true);
+    new CoinsArrondis(tblAgents, 10);
+    tblAgents->setAlternatingRowColors(true);
+    tblAgents->horizontalHeader()->setDefaultAlignment(Qt::AlignCenter);
+    tblAgents->horizontalHeader()->setHighlightSections(false);
     tblAgents->setMouseTracking(true);
     tblAgents->setEditTriggers(QAbstractItemView::NoEditTriggers);
     tblAgents->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -851,6 +913,12 @@ QWidget *FireStation::creerListe()
 
     connect(edRecherche, &QLineEdit::textChanged, this, [this] { rafraichir(); });
     connect(cbFiltrePoste, &QComboBox::currentTextChanged, this, [this] { rafraichir(); });
+    connect(cbCritere, &QComboBox::currentTextChanged, this, [this](const QString &c) {
+        edRecherche->setPlaceholderText(c == "Nom"       ? "Saisir le nom…"
+                                        : c == "Téléphone" ? "Saisir le numéro de téléphone…"
+                                                           : "Saisir la certification (ex. PSE1)…");
+        rafraichir();
+    });
     return wrap;
 }
 
@@ -1443,17 +1511,31 @@ void FireStation::rafraichir()
     const QString q = edRecherche->text().trimmed().toLower();
     const QString f = cbFiltrePoste->currentIndex() == 0 ? QString() : cbFiltrePoste->currentText();
 
+    // Recherche : sur le critère choisi (Nom, Téléphone ou Certification)
+    const QString critere = cbCritere->currentText();
+    const QString saisie  = critere == "Téléphone" ? QString(q).remove(' ') : q;
     QList<const Agent *> L;
     for (const Agent &a : m_agents) {
         if (!f.isEmpty() && a.poste != f) continue;
-        const QString hay = (a.nom + " " + a.prenom + " " + a.grade + " " + a.specialite + " " + a.dispo).toLower();
-        if (!q.isEmpty() && !hay.contains(q)) continue;
+        QString valeur;
+        if (critere == "Téléphone") {
+            valeur = QString(a.tel).remove(' ');
+        } else if (critere == "Certification") {
+            QStringList noms;
+            for (const Certification &c : a.certs) noms << c.nom;
+            valeur = noms.join(" ");
+        } else {
+            valeur = a.nom + " " + a.prenom;
+        }
+        if (!saisie.isEmpty() && !valeur.toLower().contains(saisie)) continue;
         L << &a;
     }
+
+    // Tri : sur le critère choisi (Disponibilité, Grade ou Spécialité)
     const QString tri = cbTri->currentText();
     std::stable_sort(L.begin(), L.end(), [&](const Agent *x, const Agent *y) {
-        if (tri == "Nom")   return x->nom < y->nom;
-        if (tri == "Grade") return GRADES.indexOf(x->grade) > GRADES.indexOf(y->grade);
+        if (tri == "Grade")      return GRADES.indexOf(x->grade) > GRADES.indexOf(y->grade);
+        if (tri == "Spécialité") return QString::localeAwareCompare(x->specialite, y->specialite) < 0;
         return ordreDispo(x->dispo) < ordreDispo(y->dispo);
     });
 
@@ -1461,29 +1543,22 @@ void FireStation::rafraichir()
     for (const Agent *a : L) {
         const int r = tblAgents->rowCount();
         tblAgents->insertRow(r);
-        tblAgents->setRowHeight(r, 44);
+        tblAgents->setRowHeight(r, 48);
         const QStringList vals = {a->id, a->nom + " " + a->prenom, a->poste,
                                   a->grade.isEmpty() ? "—" : a->grade,
                                   a->specialite.isEmpty() ? "—" : a->specialite};
         for (int c = 0; c < vals.size(); ++c)
             tblAgents->setItem(r, c, new QTableWidgetItem(vals[c]));
 
-        // Disponibilité : pastille arrondie colorée
+        // Disponibilité : case entière colorée (même style que le module Incidents)
         auto *disp = new QTableWidgetItem(a->dispo);
-        disp->setForeground(Qt::transparent);          // le texte est affiché par la pastille
+        disp->setTextAlignment(Qt::AlignCenter);
+        disp->setBackground(fondDispo(a->dispo));
+        disp->setForeground(couleurDispo(a->dispo).darker(125));
+        QFont fd = disp->font();
+        fd.setBold(true);
+        disp->setFont(fd);
         tblAgents->setItem(r, 5, disp);
-        auto *cadre = new QWidget;
-        auto *lc = new QHBoxLayout(cadre);
-        lc->setContentsMargins(4, 0, 4, 0);
-        auto *pastille = new QLabel(a->dispo);
-        pastille->setAlignment(Qt::AlignCenter);
-        pastille->setFixedHeight(24);
-        pastille->setStyleSheet(QString("background:%1; color:%2; border-radius:11px;"
-                                        "padding:0 12px; font-weight:600; font-size:12px;")
-                                    .arg(fondDispo(a->dispo).name(),
-                                         couleurDispo(a->dispo).darker(125).name()));
-        lc->addWidget(pastille, 0, Qt::AlignCenter);
-        tblAgents->setCellWidget(r, 5, cadre);
 
         auto *w = new QWidget;
         auto *hl = new QHBoxLayout(w);
@@ -1493,6 +1568,7 @@ void FireStation::rafraichir()
         auto mk = [&](const QString &txt, const QString &tip) {
             auto *b = new QToolButton;
             b->setText(txt); b->setToolTip(tip); b->setCursor(Qt::PointingHandCursor);
+            b->setObjectName("tableAction");
             hl->addWidget(b);
             return b;
         };
@@ -1500,7 +1576,7 @@ void FireStation::rafraichir()
         if (!m_lectureSeule) {   // modification réservée au Responsable RH
             connect(mk("Modifier", "Modifier"), &QToolButton::clicked, this, [this, id] { chargerDansFormulaire(id); });
             auto *bSup = mk("Supprimer", "Supprimer cet agent");
-            bSup->setObjectName("danger");
+            bSup->setObjectName("tableDelete");
             connect(bSup, &QToolButton::clicked, this, [this, id] { supprimer(id); });
         }
         tblAgents->setCellWidget(r, 6, w);
@@ -1518,14 +1594,16 @@ void FireStation::ajouterAlerte(const QString &titre, const QString &detail, boo
     auto *h = new QHBoxLayout(f);
     h->setContentsMargins(12, 10, 12, 10);
 
-    auto *p = new QLabel(info ? "i" : "!");
+    auto *p = new QLabel(info ? "i" : "⚠");
     p->setObjectName(info ? "pastilleInfo" : "pastille");
-    p->setFixedSize(24, 24);
+    p->setFixedSize(info ? 24 : 34, info ? 24 : 34);
     p->setAlignment(Qt::AlignCenter);
     h->addWidget(p);
 
-    auto *t = new QLabel(QString("<b>%1</b><br><span style='color:#666'>%2</span>")
-                             .arg(titre.toHtmlEscaped(), detail.toHtmlEscaped()));
+    auto *t = new QLabel(QString("<span style='font-size:14px; font-weight:700; color:%3'>%1</span>"
+                                 "<br><span style='color:#5a5560'>%2</span>")
+                             .arg(titre.toHtmlEscaped(), detail.toHtmlEscaped(),
+                                  info ? "#1f4f8a" : "#981a27"));
     t->setWordWrap(true);
     h->addWidget(t, 1);
 
@@ -1840,7 +1918,9 @@ QWidget *FireStation::creerFormationsWidget()
     auto *t = new QTableWidget(int(recos.size()), 7);
     t->setHorizontalHeaderLabels({"AGENT", "CERTIFICATION", "MOTIF", "ÉTAT", "LIEU", "DATE", "ACTION"});
     t->verticalHeader()->hide();
-    t->setShowGrid(false);
+    t->setShowGrid(true);
+    t->setAlternatingRowColors(true);
+    new CoinsArrondis(t, 10);
     t->setMouseTracking(true);
     t->setEditTriggers(QAbstractItemView::NoEditTriggers);
     t->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -1915,7 +1995,9 @@ QWidget *FireStation::creerFormationsWidget()
     auto *tc = new QTableWidget(int(idx.size()), 5);
     tc->setHorizontalHeaderLabels({"DATE", "CERTIFICATION", "LIEU", "PLACES RESTANTES", "INSCRITS"});
     tc->verticalHeader()->hide();
-    tc->setShowGrid(false);
+    tc->setShowGrid(true);
+    tc->setAlternatingRowColors(true);
+    new CoinsArrondis(tc, 10);
     tc->setEditTriggers(QAbstractItemView::NoEditTriggers);
     tc->setSelectionMode(QAbstractItemView::NoSelection);
     tc->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
