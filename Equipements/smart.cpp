@@ -49,6 +49,7 @@
 #include <QMetaObject>
 #include <QConicalGradient>
 #include <QPainterPath>
+#include <QRegion>
 #include <QEvent>
 #include <QMouseEvent>
 #include <QStackedWidget>
@@ -183,6 +184,48 @@ static QColor couleurBadge(const QString &t)
     return QColor("#2e7d32");   // Disponible, Ajout, Bon
 }
 
+// Couleurs des états : case entière colorée, comme les disponibilités du module Personnel
+static QColor fondEtat(const QString &t)
+{
+    if (t == "Hors service" || t == "Suppression" || t == "Critique")  return QColor("#ffd8dc");
+    if (t == "En maintenance" || t == "Alerte" || t == "À surveiller") return QColor("#fdebd0");
+    if (t == "En mission" || t == "Modification")                      return QColor("#e3eefa");
+    if (t == "Planification")                                          return QColor("#ece3f5");
+    if (t == "Export")                                                 return QColor("#dff2f3");
+    if (t == "Système")                                                return QColor("#eceff1");
+    return QColor("#d7f4df");   // Disponible, Ajout, Bon
+}
+static QColor texteEtat(const QString &t)
+{
+    if (t == "Hors service" || t == "Suppression" || t == "Critique")  return QColor("#9d1020");
+    if (t == "En maintenance" || t == "Alerte" || t == "À surveiller") return QColor("#9d5500");
+    if (t == "En mission" || t == "Modification")                      return QColor("#26598f");
+    if (t == "Planification")                                          return QColor("#5b2a86");
+    if (t == "Export")                                                 return QColor("#0f6670");
+    if (t == "Système")                                                return QColor("#455a64");
+    return QColor("#176d37");
+}
+
+// Coins arrondis d'un tableau (même rendu que le module Personnel)
+namespace {
+class CoinsArrondisEquip : public QObject {
+public:
+    CoinsArrondisEquip(QWidget *w, int rayon) : QObject(w), m_rayon(rayon) { w->installEventFilter(this); }
+protected:
+    bool eventFilter(QObject *o, QEvent *e) override {
+        if (e->type() == QEvent::Resize) {
+            auto *w = static_cast<QWidget *>(o);
+            QPainterPath chemin;
+            chemin.addRoundedRect(QRectF(w->rect()), m_rayon, m_rayon);
+            w->setMask(QRegion(chemin.toFillPolygon().toPolygon()));
+        }
+        return false;
+    }
+private:
+    int m_rayon;
+};
+}
+
 namespace {
 // tri numérique
 class NumItem : public QTableWidgetItem {
@@ -214,19 +257,14 @@ public:
         st->drawControl(QStyle::CE_ItemViewItem, &o, p, o.widget);
         surlignerHover(p, opt.rect, idx.row());
 
-        QColor bg = couleurBadge(txt);
-
+        // case entière colorée + texte en gras (même rendu que le module Personnel)
         p->save();
-        p->setRenderHint(QPainter::Antialiasing);
-        QFontMetrics fm(o.font);
-        QRect r(0, 0, fm.horizontalAdvance(txt) + 22, 24);
-        r.moveCenter(opt.rect.center());
-        p->setPen(Qt::NoPen);
-        p->setBrush(bg);
-        p->drawRoundedRect(r, 12, 12);
-        p->setPen(Qt::white);
-        p->setFont(o.font);
-        p->drawText(r, Qt::AlignCenter, txt);
+        p->fillRect(opt.rect, fondEtat(txt));
+        QFont f = o.font;
+        f.setBold(true);
+        p->setFont(f);
+        p->setPen(texteEtat(txt));
+        p->drawText(opt.rect, Qt::AlignCenter, txt);
         p->restore();
     }
 
@@ -251,9 +289,9 @@ public:
         st->drawControl(QStyle::CE_ItemViewItem, &o, p, o.widget);
         surlignerHover(p, opt.rect, idx.row());
 
-        QColor c("#2e7d32");
+        QColor c("#1e8e5a");                       // couleurs de la charte graphique
         if (score < 40)      c = QColor("#c62828");
-        else if (score < 70) c = QColor("#ef6c00");
+        else if (score < 70) c = QColor("#c46a00");
 
         p->save();
         p->setRenderHint(QPainter::Antialiasing);
@@ -1663,6 +1701,8 @@ smart::smart(QWidget *parent)
     btnMenu->hide();
     btnTheme->hide();
     logo->hide();
+    top->hide();   // même disposition que le module Personnel : pas de barre du haut
+    statusBar()->hide();   // la barre d'état de l'application commune suffit
 
     // ===================== CORPS =====================
     QHBoxLayout *body = new QHBoxLayout;
@@ -1764,14 +1804,21 @@ smart::smart(QWidget *parent)
     content->setStyleSheet("QWidget#pageBg{background:#f5f5f7;}");
     QVBoxLayout *contentLayout = new QVBoxLayout(content);
 
-    QLabel *title = new QLabel("⚒  Gestion des équipements");
-    title->setStyleSheet("color:#b40000;font-size:20px;font-weight:bold;");
-    contentLayout->addWidget(title);
+    contentLayout->setContentsMargins(22, 18, 22, 14);
+    contentLayout->setSpacing(14);
+    QHBoxLayout *enteteHaut = new QHBoxLayout;
+    QVBoxLayout *blocTitre = new QVBoxLayout;
+    blocTitre->setSpacing(2);
+    QLabel *title = new QLabel("Gestion des équipements");
+    title->setStyleSheet("color:#222;font-size:26px;font-weight:bold;");
+    blocTitre->addWidget(title);
 
     QLabel *description = new QLabel(
-        "Consulter, ajouter, modifier et gérer tout le matériel de la caserne.");
+        "Inventaire du matériel de la caserne : état, stock et maintenance");
     description->setStyleSheet("color:#777;");
-    contentLayout->addWidget(description);
+    blocTitre->addWidget(description);
+    enteteHaut->addLayout(blocTitre, 1);
+    contentLayout->addLayout(enteteHaut);
 
     QSplitter *splitter = new QSplitter(Qt::Horizontal);
 
@@ -1779,16 +1826,16 @@ smart::smart(QWidget *parent)
     QFrame *form = new QFrame;
     form->setObjectName("formCard");
     form->setStyleSheet(
-        "QFrame#formCard{background:white;border:1px solid #ddd;border-radius:8px;}"
+        "QFrame#formCard{background:white;border:1px solid #e4e0da;border-radius:10px;}"
         "QLabel{border:none;background:transparent;}"
-        "QLabel#fieldLabel{color:#444;font-weight:600;font-size:12px;}"
-        "QLabel#sectionLabel{color:#a90000;font-weight:bold;font-size:11px;"
-        "border-bottom:1px solid #f0c9c9;padding-bottom:2px;margin-top:0px;}"
+        "QLabel#fieldLabel{color:#302934;font-weight:700;font-size:12px;}"
+        "QLabel#sectionLabel{color:#981a27;font-weight:bold;font-size:11px;"
+        "border-bottom:1px solid #f2c7c2;padding-bottom:2px;margin-top:0px;}"
         "QLineEdit,QComboBox,QSpinBox,QDateEdit{"
-        "border:1px solid #ccc;border-radius:6px;padding:4px 8px;"
-        "background:white;min-height:20px;}"
+        "border:2px solid #dfe2e7;border-radius:9px;padding:4px 8px;"
+        "background:#fbfbfc;color:#302934;min-height:20px;}"
         "QLineEdit:focus,QComboBox:focus,QSpinBox:focus,QDateEdit:focus{"
-        "border:1px solid #c40000;}"
+        "border:2px solid #bd1e2c;background:white;}"
         "QLineEdit[erreur=\"true\"],QComboBox[erreur=\"true\"]{"
         "border:1px solid #c62828;background:#fff5f5;}"
         "QComboBox::drop-down,QDateEdit::drop-down{border:none;width:24px;}"
@@ -1798,9 +1845,12 @@ smart::smart(QWidget *parent)
     formLayout->setContentsMargins(16, 14, 16, 14);
     formLayout->setSpacing(8);
 
-    QLabel *formTitle = new QLabel("Nouveau / Modifier Équipement");
-    formTitle->setStyleSheet("color:#b40000;font-size:15px;font-weight:bold;border:none;");
+    QLabel *formTitle = new QLabel("＋ Nouvel équipement");
+    formTitle->setStyleSheet("color:#981a27;font-size:20px;font-weight:800;border:none;");
     formLayout->addWidget(formTitle);
+    QLabel *formSous = new QLabel("Saisir les informations de l'équipement");
+    formSous->setStyleSheet("color:#777984;font-size:12px;border:none;");
+    formLayout->addWidget(formSous);
 
     nom = new QLineEdit;
     nom->setPlaceholderText("Ex : Extincteur CO2");
@@ -1903,13 +1953,13 @@ smart::smart(QWidget *parent)
     QPushButton *edit    = new QPushButton("✏  Modifier");
 
     QString btnPlein =
-        "QPushButton{background:#c40000;color:white;border:none;border-radius:6px;"
+        "QPushButton{background:#b51c2a;color:white;border:2px solid #8f1420;border-radius:10px;"
         "padding:6px 14px;font-weight:bold;}"
-        "QPushButton:hover{background:#8f0000;}";
+        "QPushButton:hover{background:#cf2635;}";
     QString btnContour =
-        "QPushButton{background:white;color:#c40000;border:1px solid #c40000;"
-        "border-radius:6px;padding:6px 14px;font-weight:bold;}"
-        "QPushButton:hover{background:#f5dcdc;}";
+        "QPushButton{background:white;color:#a61725;border:2px solid #c94d59;"
+        "border-radius:10px;padding:6px 14px;font-weight:bold;}"
+        "QPushButton:hover{background:#fff1f2;}";
 
     add->setStyleSheet(btnPlein);
     edit->setStyleSheet(btnContour);
@@ -1924,21 +1974,28 @@ smart::smart(QWidget *parent)
     formLayout->addLayout(buttons);
     formLayout->addStretch();
 
-    // carte "priorité de maintenance" : remplit le bas du formulaire
+    // carte "priorité de maintenance" : affichée sous le tableau (zone d'alertes)
+    QFrame *prioCarte = nullptr;
     {
         QFrame *prio = new QFrame;
         prio->setObjectName("prioCard");
         prio->setStyleSheet(
-            "QFrame#prioCard{background:#fff5f5;border:1px solid #f0c9c9;"
-            "border-left:4px solid #c40000;border-radius:8px;"
-            "border-top-left-radius:2px;border-bottom-left-radius:2px;}"
+            "QFrame#prioCard{background:#fff5f4;border:2px solid #f2c7c2;border-radius:14px;}"
             "QLabel{border:none;background:transparent;}");
-        QVBoxLayout *pl = new QVBoxLayout(prio);
-        pl->setContentsMargins(14, 10, 14, 12);
-        pl->setSpacing(6);
+        QHBoxLayout *ph = new QHBoxLayout(prio);
+        ph->setContentsMargins(14, 10, 14, 10);
+        ph->setSpacing(12);
+        QLabel *icone = new QLabel("⚠");
+        icone->setStyleSheet("color:#f2a10c;font-size:26px;");
+        icone->setFixedWidth(34);
+        icone->setAlignment(Qt::AlignCenter);
+        ph->addWidget(icone);
+        QVBoxLayout *pl = new QVBoxLayout;
+        pl->setSpacing(4);
+        ph->addLayout(pl, 1);
 
-        QLabel *pt = new QLabel("🛠  Priorité de maintenance");
-        pt->setStyleSheet("color:#a90000;font-weight:bold;font-size:12px;");
+        QLabel *pt = new QLabel("Priorité de maintenance");
+        pt->setStyleSheet("color:#981a27;font-weight:800;font-size:14px;");
         QLabel *pn = new QLabel("—");
         pn->setObjectName("prioNom");
         pn->setTextFormat(Qt::RichText);
@@ -1949,19 +2006,21 @@ smart::smart(QWidget *parent)
         pb->setRange(0, 100);
         pb->setTextVisible(false);
         pb->setFixedHeight(8);
-        QPushButton *pv = new QPushButton("Voir la maintenance prédictive");
+        QPushButton *pv = new QPushButton("Voir la maintenance prédictive ›");
         pv->setCursor(Qt::PointingHandCursor);
         pv->setStyleSheet(
-            "QPushButton{background:white;color:#c40000;border:1px solid #c40000;border-radius:6px;"
-            "padding:5px 12px;font-weight:bold;font-size:11px;}"
-            "QPushButton:hover{background:#c40000;color:white;}");
+            "QPushButton{background:#b51c2a;color:white;border:2px solid #8f1420;border-radius:10px;"
+            "padding:6px 14px;font-weight:bold;font-size:12px;}"
+            "QPushButton:hover{background:#cf2635;}");
         connect(pv, &QPushButton::clicked, this, [=]() { afficherMaintenancePredictive(); });
 
         pl->addWidget(pt);
         pl->addWidget(pn);
         pl->addWidget(pb);
-        pl->addWidget(pv, 0, Qt::AlignLeft);
-        formLayout->addWidget(prio);
+        pv->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        pb->setMaximumWidth(QWIDGETSIZE_MAX);
+        ph->addWidget(pv, 0, Qt::AlignVCenter);
+        prioCarte = prio;   // placée sous le tableau, comme les alertes du Personnel
     }
 
     splitter->addWidget(form);
@@ -1970,25 +2029,25 @@ smart::smart(QWidget *parent)
     QFrame *tableFrame = new QFrame;
     tableFrame->setObjectName("tableCard");
     tableFrame->setStyleSheet(
-        "QFrame#tableCard{background:white;border:1px solid #ddd;border-radius:8px;}"
+        "QFrame#tableCard{background:white;border:1px solid #e4e0da;border-radius:10px;}"
         "QLabel{border:none;}"
-        "QLineEdit{border:1px solid #ccc;border-radius:8px;padding:7px 12px;background:white;}"
-        "QLineEdit:focus{border:1px solid #c40000;}"
-        "QComboBox{border:1px solid #ccc;border-radius:8px;padding:5px 10px;background:white;}"
-        "QComboBox:focus{border:1px solid #c40000;}"
+        "QLineEdit{border:2px solid #dfe2e7;border-radius:9px;padding:6px 12px;background:#fbfbfc;}"
+        "QLineEdit:focus{border:2px solid #bd1e2c;background:white;}"
+        "QComboBox{border:2px solid #dfe2e7;border-radius:9px;padding:4px 10px;background:#fbfbfc;}"
+        "QComboBox:focus{border:2px solid #bd1e2c;}"
         "QComboBox::drop-down{border:none;width:22px;}");
 
     QVBoxLayout *tableLayout = new QVBoxLayout(tableFrame);
 
     QLabel *listTitle = new QLabel("☷  Liste des équipements");
-    listTitle->setStyleSheet("color:#b40000;font-size:14px;font-weight:bold;");
+    listTitle->setStyleSheet("color:#222;font-size:16px;font-weight:bold;");
     QPushButton *btnForm = new QPushButton("◀  Masquer le formulaire");
     btnForm->setObjectName("btnForm");
     btnForm->setCursor(Qt::PointingHandCursor);
     btnForm->setStyleSheet(
-        "QPushButton{background:white;color:#c40000;border:1px solid #c40000;border-radius:6px;"
-        "padding:4px 12px;font-weight:bold;font-size:11px;}"
-        "QPushButton:hover{background:#c40000;color:white;}");
+        "QPushButton{background:white;color:#b3211c;border:1px solid #e8b4b1;border-radius:6px;"
+        "padding:6px 12px;font-weight:bold;font-size:12px;}"
+        "QPushButton:hover{background:#fbe4e2;}");
     QHBoxLayout *entete = new QHBoxLayout;
     entete->addWidget(listTitle);
     entete->addStretch();
@@ -2023,12 +2082,17 @@ smart::smart(QWidget *parent)
     cardsLayout->addWidget(carte("hs",    "⛔  Hors service", "#c62828"));
     cardsLayout->addWidget(carte("alert", "🔔  Alertes", "#ef6c00"));
     tableLayout->addLayout(cardsLayout);
+    // comme le module Personnel : les chiffres sont dans la page Statistiques
+    for (int i = 0; i < cardsLayout->count(); ++i)
+        if (QWidget *w = cardsLayout->itemAt(i)->widget()) w->hide();
+    btnForm->hide();
 
     QLabel *legende = new QLabel(
         "🔴 Alerte état : hors service     "
         "🟠 Alerte quantité : stock insuffisant");
     legende->setStyleSheet("color:#666;font-size:11px;");
     tableLayout->addWidget(legende);
+    legende->hide();
 
     QPushButton *btnPdf     = new QPushButton("⬇ PDF");
     QPushButton *btnStat    = new QPushButton("📊 Statistiques");
@@ -2037,9 +2101,9 @@ smart::smart(QWidget *parent)
     QPushButton *btnMaint   = new QPushButton("🛠 Maintenance prédictive");
 
     QString orangeStyle =
-        "QPushButton { background:#f5a623; color:black; border:none;"
-        "border-radius:6px; padding:8px 12px; font-weight:bold; }"
-        "QPushButton:hover { background:#e0941a; }";
+        "QPushButton { background:white; color:#b3211c; border:1px solid #e8b4b1;"
+        "border-radius:6px; padding:8px 14px; font-weight:bold; }"
+        "QPushButton:hover { background:#fbe4e2; }";
     btnPdf->setStyleSheet(orangeStyle);
     btnStat->setStyleSheet(orangeStyle);
     btnAlert->setStyleSheet(orangeStyle);
@@ -2051,16 +2115,20 @@ smart::smart(QWidget *parent)
     triCombo->setCurrentIndex(-1);
     triCombo->setPlaceholderText("Choisir un critère");
 
-    QHBoxLayout *toolsLayout = new QHBoxLayout;
-    toolsLayout->addWidget(btnPdf);
-    toolsLayout->addWidget(btnStat);
-    toolsLayout->addWidget(btnAlert);
-    toolsLayout->addWidget(btnJournal);
-    toolsLayout->addWidget(btnMaint);
-    toolsLayout->addStretch();
-    toolsLayout->addWidget(new QLabel("Trier par :"));
-    toolsLayout->addWidget(triCombo);
-    tableLayout->addLayout(toolsLayout);
+    // boutons d'action en haut à droite, à côté du titre (comme le Personnel)
+    QPushButton *btnEmailHaut = new QPushButton("✉ E-mail");
+    btnEmailHaut->setStyleSheet(orangeStyle);
+    btnEmailHaut->setToolTip("Paramètres d'envoi des alertes par e-mail");
+    for (QPushButton *b : {btnStat, btnMaint, btnAlert, btnJournal, btnPdf, btnEmailHaut}) {
+        b->setCursor(Qt::PointingHandCursor);
+        enteteHaut->addWidget(b, 0, Qt::AlignVCenter);
+    }
+    btnPdf->setText("Inventaire (PDF)");
+    btnStat->setText("Statistiques");
+    btnAlert->setText("Alertes");
+    btnJournal->setText("Journal");
+    btnMaint->setText("Maintenance prédictive");
+    connect(btnEmailHaut, &QPushButton::clicked, this, [=]() { afficherParametresEmail(); });
 
     recherche = new QLineEdit;
     recherche->setPlaceholderText("🔍  Rechercher un équipement...");
@@ -2069,10 +2137,13 @@ smart::smart(QWidget *parent)
     filtreType->addItems({"Tous les types", "Protection", "Secours",
                           "Communication", "Médical", "Outillage"});
 
+    recherche->setPlaceholderText("Rechercher par nom, marque ou localisation…");
     QHBoxLayout *searchLayout = new QHBoxLayout;
     searchLayout->addWidget(recherche, 1);
-    searchLayout->addWidget(new QLabel("Type :"));
     searchLayout->addWidget(filtreType);
+    searchLayout->addSpacing(8);
+    searchLayout->addWidget(new QLabel("Trier par"));
+    searchLayout->addWidget(triCombo);
     tableLayout->addLayout(searchLayout);
 
     table = new QTableWidget(0, 15);
@@ -2086,7 +2157,7 @@ smart::smart(QWidget *parent)
         table->horizontalHeader()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
     table->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Stretch);
     table->horizontalHeader()->setSectionResizeMode(10, QHeaderView::Fixed);
-    table->setColumnWidth(10, 112);
+    table->setColumnWidth(10, 160);
     table->horizontalHeader()->setMinimumSectionSize(40);
     table->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
@@ -2096,8 +2167,10 @@ smart::smart(QWidget *parent)
     table->setColumnHidden(13, true);
 
     table->setAlternatingRowColors(true);
-    table->setShowGrid(false);
+    table->setShowGrid(true);
     table->verticalHeader()->setVisible(false);
+    table->horizontalHeader()->setHighlightSections(false);
+    new CoinsArrondisEquip(table, 10);
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table->setFocusPolicy(Qt::NoFocus);
@@ -2138,10 +2211,12 @@ smart::smart(QWidget *parent)
     table->setColumnWidth(14, 104);
     table->horizontalHeader()->moveSection(14, 10);   // "Santé" juste avant "Actions"
     table->setStyleSheet(
-        "QTableWidget{border:none;background:white;alternate-background-color:#fafafa;"
-        "selection-background-color:#f3c9c9;selection-color:black;}"
-        "QHeaderView::section{background:#fbeaea;color:#a90000;font-weight:bold;"
-        "border:none;border-bottom:2px solid #c40000;padding:8px 6px;}");
+        "QTableWidget{border:1px solid #e4e6ea;border-radius:10px;background:white;"
+        "alternate-background-color:#fbf7f8;gridline-color:#eceef1;"
+        "selection-background-color:#ffe5e7;selection-color:#302934;}"
+        "QHeaderView{background:#5b1722;border:none;}"
+        "QHeaderView::section{background:#5b1722;color:white;font-weight:700;font-size:11px;"
+        "border:none;border-right:1px solid #762834;padding:10px 5px;}");
 
     // données de démonstration
     QStringList noms = {
@@ -2225,8 +2300,44 @@ smart::smart(QWidget *parent)
     connect(btnJournal, &QPushButton::clicked, this, [=]() { afficherJournal(); });
     connect(btnMaint, &QPushButton::clicked, this, [=]() { afficherMaintenancePredictive(); });
 
-    splitter->addWidget(tableFrame);
-    splitter->setSizes({340, 960});
+    QWidget *colonneDroite = new QWidget;
+    QVBoxLayout *cd = new QVBoxLayout(colonneDroite);
+    cd->setContentsMargins(0, 0, 0, 0);
+    cd->setSpacing(10);
+    cd->addWidget(tableFrame, 1);
+    if (prioCarte) cd->addWidget(prioCarte);
+    {   // carte d'alerte stock / état (même style que les alertes du Personnel)
+        QFrame *al = new QFrame;
+        al->setObjectName("alerteCarte");
+        al->setStyleSheet("QFrame#alerteCarte{background:#fff5f4;border:2px solid #f2c7c2;border-radius:14px;}"
+                          "QLabel{border:none;background:transparent;}");
+        QHBoxLayout *ah = new QHBoxLayout(al);
+        ah->setContentsMargins(14, 10, 14, 10);
+        ah->setSpacing(12);
+        QLabel *ic = new QLabel("⚠");
+        ic->setStyleSheet("color:#f2a10c;font-size:26px;");
+        ic->setFixedWidth(34);
+        ic->setAlignment(Qt::AlignCenter);
+        QLabel *txt = new QLabel;
+        txt->setObjectName("alerteResume");
+        txt->setTextFormat(Qt::RichText);
+        txt->setWordWrap(true);
+        QPushButton *voir = new QPushButton("Voir les alertes ›");
+        voir->setCursor(Qt::PointingHandCursor);
+        voir->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        voir->setStyleSheet("QPushButton{background:#b51c2a;color:white;border:2px solid #8f1420;border-radius:10px;"
+                            "padding:6px 14px;font-weight:bold;font-size:12px;}"
+                            "QPushButton:hover{background:#cf2635;}");
+        connect(voir, &QPushButton::clicked, this, [=]() { afficherAlertes(true); });
+        ah->addWidget(ic);
+        ah->addWidget(txt, 1);
+        ah->addWidget(voir, 0, Qt::AlignVCenter);
+        cd->addWidget(al);
+    }
+    form->setFixedWidth(350);
+    splitter->addWidget(colonneDroite);
+    splitter->setHandleWidth(14);
+    splitter->setSizes({350, 950});
 
     // le formulaire se replie / se déplie avec une animation
     connect(btnForm, &QPushButton::clicked, this, [=]() {
@@ -2540,12 +2651,12 @@ void smart::ajouterLigne(const QString &n, const QString &t, const QString &m,
     actLayout->setContentsMargins(2, 2, 2, 2);
     actLayout->setSpacing(4);
 
-    QPushButton *btnEdit = new QPushButton("Modif.");
-    QPushButton *btnDel  = new QPushButton("Suppr.");
-    btnEdit->setStyleSheet("QPushButton{background:white;color:#c40000;border:1px solid #c40000;border-radius:4px;padding:2px 4px;font-size:11px;}"
-                           "QPushButton:hover{background:#c40000;color:white;}");
-    btnDel->setStyleSheet("QPushButton{background:#c40000;color:white;border:none;border-radius:4px;padding:2px 4px;font-size:11px;}"
-                          "QPushButton:hover{background:#8f0000;}");
+    QPushButton *btnEdit = new QPushButton("Modifier");
+    QPushButton *btnDel  = new QPushButton("Supprimer");
+    btnEdit->setStyleSheet("QPushButton{background:#fff4f5;color:#9e1724;border:1px solid #efc9cd;border-radius:7px;padding:3px 6px;font-size:11px;}"
+                           "QPushButton:hover{background:#f6d6da;}");
+    btnDel->setStyleSheet("QPushButton{background:#8f1420;color:white;border:1px solid #74101a;border-radius:7px;padding:3px 6px;font-size:11px;}"
+                          "QPushButton:hover{background:#c1121f;}");
     btnEdit->setMinimumWidth(48);
     btnDel->setMinimumWidth(48);
     actLayout->addWidget(btnEdit);
@@ -2789,11 +2900,9 @@ void smart::colorierLignes()
         int q = table->item(r, 3)->text().toInt();
         int s = table->item(r, 4)->text().toInt();
 
+        // plus de ligne entière colorée (comme le Personnel) : l'état a sa case colorée,
+        // et un stock insuffisant est signalé dans la case « Qté »
         QBrush brush(Qt::NoBrush);
-        if (e == "Hors service")
-            brush = QBrush(QColor(g_sombre ? "#5a2a30" : "#f8d7da"));
-        else if (q < s)
-            brush = QBrush(QColor(g_sombre ? "#5c4322" : "#ffe0b2"));
 
         // score de santé (colonne 14)
         if (table->item(r, 14)) {
@@ -2806,6 +2915,16 @@ void smart::colorierLignes()
         for (int c = 0; c < table->columnCount(); c++)
             if (table->item(r, c))
                 table->item(r, c)->setBackground(brush);
+
+        // stock insuffisant : case « Qté » en orange (couleur « à surveiller » de la charte)
+        if (QTableWidgetItem *it = table->item(r, 3)) {
+            QFont f = it->font();
+            f.setBold(q < s);
+            it->setFont(f);
+            it->setBackground(q < s ? QBrush(QColor("#fdebd0")) : QBrush(Qt::NoBrush));
+            it->setForeground(q < s ? QBrush(QColor("#9d5500")) : QBrush());
+            it->setToolTip(q < s ? QString("Stock insuffisant : %1 / seuil %2").arg(q).arg(s) : QString());
+        }
 
         // la cellule "Actions" prend la même couleur que la ligne
         if (QWidget *w = table->cellWidget(r, 10))
@@ -2990,7 +3109,7 @@ void smart::afficherAlertes(bool afficherSiVide)
 // =====================================================================
 void smart::majCartes()
 {
-    int total = 0, dispo = 0, hs = 0, alertes = 0, qteTotale = 0;
+    int total = 0, dispo = 0, hs = 0, alertes = 0, qteTotale = 0, nbBas = 0;
     int nbEtat[4] = {0, 0, 0, 0};   // Disponible, En mission, En maintenance, Hors service
     QStringList lignes;
     int minScore = 101;
@@ -3027,6 +3146,7 @@ void smart::majCartes()
         bool bas = q < s;
         if (horsService) hs++;
         if (horsService || bas) alertes++;
+        if (bas) nbBas++;
 
         auto ligne = [&](const QString &icone, const QString &txt) {
             if (lignes.size() < 6)
@@ -3073,6 +3193,14 @@ void smart::majCartes()
 
     if (QPushButton *b = findChild<QPushButton *>("btnCloche"))
         b->setText(QString("🔔  %1").arg(alertes));
+
+    // carte d'alerte stock / état sous le tableau
+    if (QLabel *l = findChild<QLabel *>("alerteResume")) {
+        if (QWidget *carte = l->parentWidget()) carte->setVisible(alertes > 0);
+        l->setText(QString("<span style='font-size:14px;font-weight:700;color:#981a27'>%1 équipement(s) en alerte</span><br>"
+                           "<span style='color:#5a5560'>%2 hors service  •  %3 en stock insuffisant</span>")
+                       .arg(alertes).arg(hs).arg(nbBas));
+    }
 
     // carte "priorité de maintenance"
     if (QFrame *card = findChild<QFrame *>("prioCard")) {
