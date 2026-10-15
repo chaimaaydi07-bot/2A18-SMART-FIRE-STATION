@@ -1,4 +1,4 @@
-QT += widgets printsupport network
+QT += widgets printsupport network sql
 
 CONFIG += c++17
 
