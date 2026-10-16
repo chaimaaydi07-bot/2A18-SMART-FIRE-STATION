@@ -119,7 +119,7 @@ QColor couleurDispo(const QString &d)
     if (d == "En intervention") return QColor("#c46a00");
     if (d == "En formation")    return QColor("#2f6fb3");
     if (d == "En repos")        return QColor("#8a8a8a");
-    return QColor("#b5b5b5");   // En congé
+    return QColor("#c62828");   // En congé (indisponible)
 }
 
 QColor fondDispo(const QString &d)
@@ -127,7 +127,18 @@ QColor fondDispo(const QString &d)
     if (d == "Disponible")      return QColor("#d7f4df");   // même vert que le module Incidents
     if (d == "En intervention") return QColor("#fdebd0");
     if (d == "En formation")    return QColor("#e3eefa");
-    return QColor("#eeeeee");
+    if (d == "En congé")        return QColor("#ffd8dc");   // même rouge que « Hors service » (Équipements)
+    return QColor("#eeeeee");   // En repos
+}
+
+// Couleur du texte de la case Disponibilité (mêmes couleurs que les modules Incidents et Équipements)
+QColor texteDispo(const QString &d)
+{
+    if (d == "Disponible")      return QColor("#176d37");
+    if (d == "En intervention") return QColor("#9d5500");
+    if (d == "En formation")    return QColor("#26598f");
+    if (d == "En congé")        return QColor("#9d1020");
+    return QColor("#6e6e6e");   // En repos
 }
 
 // ----------------------------------------------------------------------------
@@ -1554,7 +1565,7 @@ void FireStation::rafraichir()
         auto *disp = new QTableWidgetItem(a->dispo);
         disp->setTextAlignment(Qt::AlignCenter);
         disp->setBackground(fondDispo(a->dispo));
-        disp->setForeground(couleurDispo(a->dispo).darker(125));
+        disp->setForeground(texteDispo(a->dispo));
         QFont fd = disp->font();
         fd.setBold(true);
         disp->setFont(fd);
