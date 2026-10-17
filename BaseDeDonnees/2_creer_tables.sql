@@ -1,6 +1,7 @@
 -- ============================================================================
 --  Smart Fire Station (USPC) — Base de données commune (Oracle)
---  Modèle physique : 9 tables (Personnel, Incidents, Véhicules, Équipements), clés primaires, clés étrangères et contraintes
+--  ÉTAPE 2 : à exécuter connecté avec l'utilisateur smartfire
+--  Modèle physique : 6 tables (Personnel, Incidents, Véhicules, Équipements), clés primaires, clés étrangères et contraintes
 -- ============================================================================
 
 -- --------------------------- Module Gestion du personnel --------------------
@@ -20,30 +21,11 @@ CREATE TABLE AGENT (
     disponibilite   VARCHAR2(20)  DEFAULT 'Disponible' NOT NULL
         CONSTRAINT ck_agent_dispo CHECK (disponibilite IN ('Disponible', 'En intervention',
             'En formation', 'En repos', 'En congé')),
-    mot_de_passe    VARCHAR2(128)            -- chiffré ; vide = n'utilise pas l'application
-);
-
-CREATE TABLE CERTIFICATION (                -- catalogue des certifications (PSE1, NRBC…)
-    id_certification NUMBER        CONSTRAINT pk_certification PRIMARY KEY,
-    nom              VARCHAR2(80)  NOT NULL CONSTRAINT uq_certification_nom UNIQUE
-);
-
--- Association OBTENIR (AGENT n — n CERTIFICATION) : dates propres à chaque obtention
-CREATE TABLE OBTENTION (
-    id_agent          VARCHAR2(15)  CONSTRAINT fk_obt_agent REFERENCES AGENT(id_agent) ON DELETE CASCADE,
-    id_certification  NUMBER        CONSTRAINT fk_obt_certif REFERENCES CERTIFICATION(id_certification) ON DELETE CASCADE,
-    date_obtention    DATE          NOT NULL,
-    date_echeance     DATE          NOT NULL,
-    CONSTRAINT pk_obtention PRIMARY KEY (id_agent, id_certification),
-    CONSTRAINT ck_obt_dates CHECK (date_echeance > date_obtention)
-);
-
-CREATE TABLE SMS (
-    id_sms          NUMBER         CONSTRAINT pk_sms PRIMARY KEY,
-    date_envoi      DATE           DEFAULT SYSDATE NOT NULL,
-    message         VARCHAR2(400)  NOT NULL,
-    id_agent        VARCHAR2(15)   NOT NULL
-        CONSTRAINT fk_sms_agent REFERENCES AGENT(id_agent) ON DELETE CASCADE
+    certification   VARCHAR2(80),            -- nom de la certification (PSE1, NRBC…)
+    date_obtention  DATE,
+    date_echeance   DATE,
+    mot_de_passe    VARCHAR2(128),           -- chiffré ; vide = n'utilise pas l'application
+    CONSTRAINT ck_agent_certif_dates CHECK (date_echeance IS NULL OR date_obtention IS NULL OR date_echeance > date_obtention)
 );
 
 -- --------------------------- Module Gestion des incidents -------------------
@@ -57,16 +39,13 @@ CREATE TABLE INCIDENT (
     nb_victimes     NUMBER(4)      DEFAULT 0 CONSTRAINT ck_incident_victimes CHECK (nb_victimes >= 0),
     description     VARCHAR2(500),
     statut          VARCHAR2(20)   DEFAULT 'Signalé'
-        CONSTRAINT ck_incident_statut CHECK (statut IN ('Signalé', 'En cours', 'Terminé', 'Archivé')),
-    id_agent        VARCHAR2(15)   -- dispatcher qui a enregistré l'incident (ENREGISTRER)
-        CONSTRAINT fk_incident_agent REFERENCES AGENT(id_agent) ON DELETE SET NULL
+        CONSTRAINT ck_incident_statut CHECK (statut IN ('Signalé', 'En cours', 'Terminé', 'Archivé'))
 );
 
--- Association INTERVENIR (AGENT n — n INCIDENT) : sert aussi à la charge de travail
+-- Association INTERVENIR (AGENT 0,n — 1,n INCIDENT)
 CREATE TABLE INTERVENTION (
     id_agent      VARCHAR2(15)  CONSTRAINT fk_interv_agent REFERENCES AGENT(id_agent) ON DELETE CASCADE,
     id_incident   VARCHAR2(15)  CONSTRAINT fk_interv_incident REFERENCES INCIDENT(id_incident) ON DELETE CASCADE,
-    role          VARCHAR2(40),
     CONSTRAINT pk_intervention PRIMARY KEY (id_agent, id_incident)
 );
 
@@ -81,7 +60,7 @@ CREATE TABLE VEHICULE (
     disponibilite           VARCHAR2(20)  DEFAULT 'Disponible'
 );
 
--- Association MOBILISER (VEHICULE n — n INCIDENT)
+-- Association MOBILISER (VEHICULE 0,n — 1,n INCIDENT)
 CREATE TABLE MOBILISATION (
     id_vehicule   VARCHAR2(15)  CONSTRAINT fk_mobil_vehicule REFERENCES VEHICULE(id_vehicule) ON DELETE CASCADE,
     id_incident   VARCHAR2(15)  CONSTRAINT fk_mobil_incident REFERENCES INCIDENT(id_incident) ON DELETE CASCADE,
@@ -102,7 +81,3 @@ CREATE TABLE EQUIPEMENT (
     id_vehicule     VARCHAR2(15)  -- véhicule dans lequel l'équipement est embarqué (EQUIPER)
         CONSTRAINT fk_equip_vehicule REFERENCES VEHICULE(id_vehicule) ON DELETE SET NULL
 );
-
--- Numérotation automatique des certifications et des SMS
-CREATE SEQUENCE seq_certification START WITH 1 INCREMENT BY 1;
-CREATE SEQUENCE seq_sms           START WITH 1 INCREMENT BY 1;
