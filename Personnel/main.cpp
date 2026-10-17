@@ -3,17 +3,16 @@
 #include <QStackedWidget>
 #include <QIcon>
 #include <QColor>
-#include <QSqlDatabase>
-#include <QSqlError>
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QDebug>
 
+#include "connection.h"
 #include "firestation.h"
 #include "pageconnexion.h"
 
-// Recalcule la taille de la fenêtre après un changement de page.
+// Recalcule la taille après un changement de page.
 static void recalerFenetre(QStackedWidget &fenetre)
 {
     if (fenetre.isMaximized()) {
@@ -25,10 +24,11 @@ static void recalerFenetre(QStackedWidget &fenetre)
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+
     app.setStyle("Fusion");
     app.setWindowIcon(QIcon(":/logo_USPC.png"));
 
-    // Palette claire forcée.
+    // Palette claire.
     QPalette p;
     p.setColor(QPalette::Window, QColor("#f4f2ef"));
     p.setColor(QPalette::WindowText, QColor("#222222"));
@@ -44,12 +44,10 @@ int main(int argc, char *argv[])
     p.setColor(QPalette::HighlightedText, QColor("#222222"));
     app.setPalette(p);
 
-    // Connexion Oracle via la source ODBC créée dans Windows.
-    QSqlDatabase db = QSqlDatabase::addDatabase("QODBC");
-    db.setDatabaseName("SmartFireStation");
-    db.setUserName("smartfire");
+    // Accès à l'unique instance de Connection.
+    Connection &base = Connection::createInstance();
 
-    // Le mot de passe est saisi au démarrage, sans être écrit dans le code.
+    // Mot de passe demandé au démarrage.
     while (true) {
         bool accepte = false;
 
@@ -62,10 +60,12 @@ int main(int argc, char *argv[])
             &accepte
             );
 
-        if (!accepte)
+        if (!accepte) {
+            base.closeConnection();
             return 0;
+        }
 
-        if (db.open("smartfire", motDePasse)) {
+        if (base.createConnection(motDePasse)) {
             qDebug() << "Connexion Oracle établie pour smartfire.";
 
             QMessageBox::information(
@@ -73,73 +73,83 @@ int main(int argc, char *argv[])
                 "Base de données",
                 "Connexion Oracle réussie avec smartfire."
                 );
+
             break;
         }
 
         QMessageBox::warning(
             nullptr,
             "Échec de connexion Oracle",
-            "Impossible de se connecter à Oracle.\n\n"
-                + db.lastError().text()
+            QString("Impossible de se connecter à Oracle.\n\n")
+                + base.lastError()
                 + "\n\nCliquez sur OK pour réessayer."
             );
     }
 
-    // Une seule fenêtre : connexion puis application.
-    QStackedWidget fenetre;
-    fenetre.setWindowTitle("USPC — Smart Fire Station");
+    int resultat = 0;
 
-    PageConnexion connexion;
-    FireStation application;
+    // Les fenêtres seront détruites avant de fermer la base.
+    {
+        QStackedWidget fenetre;
+        fenetre.setWindowTitle("USPC — Smart Fire Station");
 
-    connexion.setComptes(application.comptes());
-    fenetre.addWidget(&connexion);
-    fenetre.addWidget(&application);
+        PageConnexion connexion;
+        FireStation application;
 
-    // Connexion à l'application.
-    QObject::connect(
-        &connexion,
-        &PageConnexion::connexionReussie,
-        &fenetre,
-        [&](const QString &id,
-            const QString &nom,
-            const QString &role) {
-            application.appliquerRole(id, nom, role);
-            fenetre.setCurrentWidget(&application);
-            recalerFenetre(fenetre);
-        }
-        );
+        connexion.setComptes(application.comptes());
+        fenetre.addWidget(&connexion);
+        fenetre.addWidget(&application);
 
-    // Mot de passe oublié.
-    QObject::connect(
-        &connexion,
-        &PageConnexion::smsDemande,
-        &application,
-        &FireStation::envoyerSms
-        );
+        // Connexion de l'agent à l'application.
+        QObject::connect(
+            &connexion,
+            &PageConnexion::connexionReussie,
+            &fenetre,
+            [&](const QString &id,
+                const QString &nom,
+                const QString &role) {
+                application.appliquerRole(id, nom, role);
+                fenetre.setCurrentWidget(&application);
+                recalerFenetre(fenetre);
+            }
+            );
 
-    QObject::connect(
-        &connexion,
-        &PageConnexion::motDePasseReinitialise,
-        &application,
-        &FireStation::changerMotDePasse
-        );
+        // Mot de passe oublié.
+        QObject::connect(
+            &connexion,
+            &PageConnexion::smsDemande,
+            &application,
+            &FireStation::envoyerSms
+            );
 
-    // Déconnexion de l'application.
-    QObject::connect(
-        &application,
-        &FireStation::deconnexion,
-        &fenetre,
-        [&] {
-            connexion.setComptes(application.comptes());
-            connexion.reinitialiser();
-            fenetre.setCurrentWidget(&connexion);
-            recalerFenetre(fenetre);
-        }
-        );
+        QObject::connect(
+            &connexion,
+            &PageConnexion::motDePasseReinitialise,
+            &application,
+            &FireStation::changerMotDePasse
+            );
 
-    fenetre.resize(1280, 820);
-    fenetre.showMaximized();
+        // Déconnexion de l'agent.
+        QObject::connect(
+            &application,
+            &FireStation::deconnexion,
+            &fenetre,
+            [&] {
+                connexion.setComptes(application.comptes());
+                connexion.reinitialiser();
+                fenetre.setCurrentWidget(&connexion);
+                recalerFenetre(fenetre);
+            }
+            );
 
-    return app.exec();
+        fenetre.resize(1280, 820);
+        fenetre.showMaximized();
+
+        resultat = app.exec();
+    }
+
+    // Fermer la connexion avant de détruire QApplication.
+    base.closeConnection();
+
+    return resultat;
 }

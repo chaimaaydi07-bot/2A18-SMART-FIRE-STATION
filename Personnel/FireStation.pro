@@ -7,6 +7,7 @@ TARGET = FireStation
 INCLUDEPATH += ../Incidents ../Equipements ../Vehicules
 
 SOURCES += \
+    connection.cpp \
     main.cpp \
     firestation.cpp \
     logoanime.cpp \
@@ -16,6 +17,7 @@ SOURCES += \
     ../Equipements/smart.cpp
 
 HEADERS += \
+    connection.h \
     firestation.h \
     logoanime.h \
     pageconnexion.h \
