@@ -159,3 +159,15 @@ bool Agent::modifierMotDePasse(QString id, QString motDePasse)
     erreur = ok ? QString() : query.lastError().text();
     return ok;
 }
+
+// ======================================================= Étape 4 : SUPPRIMER
+bool Agent::supprimer(QString id)
+{
+    QSqlQuery query;
+    query.prepare("DELETE FROM AGENT WHERE id_agent = :id");
+    query.bindValue(":id", id);
+
+    const bool ok = query.exec() && query.numRowsAffected() > 0;
+    erreur = ok ? QString() : query.lastError().text();
+    return ok;
+}

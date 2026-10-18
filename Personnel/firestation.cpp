@@ -1506,8 +1506,11 @@ void FireStation::supprimer(const QString &id)
     }
     if (QMessageBox::question(this, "Supprimer", "Supprimer l'agent " + id + " ?")
         != QMessageBox::Yes) return;
-    const int i = indexParId(id);
-    if (i >= 0) m_agents.removeAt(i);
+    if (!m_agentTmp.supprimer(id)) {                                // Étape 4 : SUPPRIMER
+        erreurBase("Suppression", m_agentTmp.derniereErreur());
+        return;
+    }
+    chargerAgents();                       // actualiser l'affichage après la suppression
     for (SessionFormation &s : m_sessions)
         if (s.inscrits.removeAll(id) > 0) ++s.places;
     if (m_editingId == id) reinitialiser();
