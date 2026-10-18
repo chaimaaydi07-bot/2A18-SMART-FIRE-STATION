@@ -111,6 +111,7 @@ private:
     void chargerDonnees();
     void chargerAgents();                       // lit la table AGENT (Agent::afficher)
     void erreurBase(const QString &action, const QString &detail);
+    Agent versAgent(const FicheAgent &f) const; // fiche de l'interface → objet Agent
     void chargerSessions();
     bool lireFormulaire(FicheAgent &a, QString &erreur);
     QString nouvelId() const;

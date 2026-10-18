@@ -21,6 +21,13 @@ Agent::Agent(QString id, QString nom, QString prenom, QString poste, QString gra
     this->motDePasse = motDePasse;
 }
 
+// Les dates sont envoyées sous forme de texte puis converties par Oracle (TO_DATE).
+// Une date vide devient NULL dans la base.
+static QString texteDate(const QDate &d)
+{
+    return d.isValid() ? d.toString("yyyy-MM-dd") : QString();
+}
+
 // ======================================================= Étape 1 : AFFICHER
 QSqlQueryModel *Agent::afficher()
 {
@@ -53,4 +60,49 @@ QSqlQueryModel *Agent::afficher()
 
     erreur = model->lastError().isValid() ? model->lastError().text() : QString();
     return model;
+}
+
+// ======================================================= Étape 2 : AJOUTER
+bool Agent::ajouter()
+{
+    QSqlQuery query;
+
+    // prepare() prend la requête en paramètre pour la préparer à l'exécution.
+    query.prepare("INSERT INTO AGENT (id_agent, nom, prenom, poste, grade, specialite, "
+                  "telephone, disponibilite, certification, date_obtention, date_echeance, "
+                  "mot_de_passe) "
+                  "VALUES (:id, :nom, :prenom, :poste, :grade, :specialite, :telephone, "
+                  ":disponibilite, :certification, TO_DATE(:obtention, 'YYYY-MM-DD'), "
+                  "TO_DATE(:echeance, 'YYYY-MM-DD'), :motDePasse)");
+
+    // Création des variables liées (protection contre l'injection SQL)
+    query.bindValue(":id", id);
+    query.bindValue(":nom", nom);
+    query.bindValue(":prenom", prenom);
+    query.bindValue(":poste", poste);
+    query.bindValue(":grade", grade);
+    query.bindValue(":specialite", specialite);
+    query.bindValue(":telephone", telephone);
+    query.bindValue(":disponibilite", disponibilite);
+    query.bindValue(":certification", certification);
+    query.bindValue(":obtention", texteDate(dateObtention));
+    query.bindValue(":echeance", texteDate(dateEcheance));
+    query.bindValue(":motDePasse", motDePasse);
+
+    // exec() envoie la requête pour l'exécuter.
+    const bool ok = query.exec();
+    erreur = ok ? QString() : query.lastError().text();
+    return ok;
+}
+
+// Contrôle de saisie : vrai si un autre agent a déjà ce numéro
+// (saufId = l'agent en cours de modification, vide pour un ajout).
+bool Agent::telephoneExiste(QString telephone, QString saufId)
+{
+    QSqlQuery query;
+    query.prepare("SELECT COUNT(*) FROM AGENT WHERE telephone = :telephone "
+                  "AND id_agent <> :id");
+    query.bindValue(":telephone", telephone);
+    query.bindValue(":id", saufId.isEmpty() ? QString("-") : saufId);
+    return query.exec() && query.next() && query.value(0).toInt() > 0;
 }

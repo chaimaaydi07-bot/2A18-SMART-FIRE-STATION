@@ -815,13 +815,14 @@ QWidget *FireStation::creerFormulaire()
 
     // Titre de la zone + lien « Ajouter » sur la même ligne
     auto *teteCerts = new QHBoxLayout;
-    auto *lblCerts = new QLabel("Certifications");
+    auto *lblCerts = new QLabel("Certification");
     lblCerts->setProperty("champ", "true");
     teteCerts->addWidget(lblCerts);
     teteCerts->addStretch();
     auto *bAddC = new QPushButton("+ Ajouter une certification");
     bAddC->setObjectName("lienAjout");
     bAddC->setCursor(Qt::PointingHandCursor);
+    bAddC->hide();                 // une seule certification par agent (table AGENT)
     teteCerts->addWidget(bAddC);
     l->addLayout(teteCerts);
     auto *scroll = new QScrollArea;
@@ -1120,6 +1121,16 @@ void FireStation::chargerDonnees()
     chargerAgents();
 }
 
+// Fiche de l'interface → objet Agent (une certification par agent, comme dans la table)
+Agent FireStation::versAgent(const FicheAgent &f) const
+{
+    Certification c;                      // la certification la plus proche de l'échéance
+    for (const Certification &x : f.certs)
+        if (c.nom.isEmpty() || x.echeance < c.echeance) c = x;
+    return Agent(f.id, f.nom, f.prenom, f.poste, f.grade, f.specialite, f.tel, f.dispo,
+                 c.nom, c.obtention, c.echeance, f.mdpHash);
+}
+
 // ============================================================================
 //  Authentification : comptes et droits d'accès
 // ============================================================================
@@ -1301,6 +1312,7 @@ void FireStation::retirerCert(QFrame *frame)
     certsLayout->removeWidget(frame);
     frame->hide();
     frame->deleteLater();
+    if (m_certRows.isEmpty()) ajouterCertLigne();   // garder une ligne de saisie vide
 }
 
 void FireStation::viderCerts()
@@ -1324,8 +1336,18 @@ bool FireStation::lireFormulaire(FicheAgent &a, QString &erreur)
     a.dispo      = cbDispo->currentText();
 
     if (a.nom.isEmpty() || a.prenom.isEmpty()) { erreur = "Nom et prénom obligatoires."; return false; }
-    if (!QRegularExpression("^\\+?[0-9 ]{8,15}$").match(a.tel).hasMatch()) {
-        erreur = "Numéro de téléphone invalide (nécessaire pour les SMS)."; return false;
+    // Contrôle de saisie : numéro tunisien, 8 chiffres, avec ou sans +216.
+    // Il est toujours enregistré au même format : +216 XX XXX XXX
+    QString chiffres = a.tel;
+    chiffres.remove(' ');
+    if (chiffres.startsWith("+216")) chiffres = chiffres.mid(4);
+    else if (chiffres.startsWith("00216")) chiffres = chiffres.mid(5);
+    if (!QRegularExpression("^[0-9]{8}$").match(chiffres).hasMatch()) {
+        erreur = "Numéro de téléphone invalide : 8 chiffres (ex. 20 123 456 ou +216 20 123 456)."; return false;
+    }
+    a.tel = QString("+216 %1 %2 %3").arg(chiffres.left(2), chiffres.mid(2, 3), chiffres.mid(5, 3));
+    if (m_agentTmp.telephoneExiste(a.tel, m_editingId)) {      // contrôle dans la classe Agent
+        erreur = "Ce numéro de téléphone est déjà utilisé par un autre agent."; return false;
     }
     const QString mdp = edMdp->text();
     if (ACCES.contains(a.poste) && mdp.isEmpty()) {
@@ -1361,7 +1383,9 @@ void FireStation::ajouter()
     FicheAgent a; QString err;
     if (!lireFormulaire(a, err)) { lblErreur->setText(err); return; }
     a.id = nouvelId();
-    m_agents.append(a);
+    Agent agent = versAgent(a);                                     // Étape 2 : AJOUTER
+    if (!agent.ajouter()) { erreurBase("Ajout", agent.derniereErreur()); return; }
+    chargerAgents();                       // actualiser l'affichage après l'ajout
     reinitialiser();
     verifierEcheancesSms();
     rafraichir();

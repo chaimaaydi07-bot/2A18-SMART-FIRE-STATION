@@ -59,6 +59,8 @@ public:
 
     // Fonctionnalités de base (CRUD) relatives à l'entité Agent
     QSqlQueryModel *afficher();                  // Étape 1 : AFFICHER
+    bool ajouter();                              // Étape 2 : AJOUTER
+    bool telephoneExiste(QString telephone, QString saufId);   // contrôle de saisie
 };
 
 #endif // AGENT_H
