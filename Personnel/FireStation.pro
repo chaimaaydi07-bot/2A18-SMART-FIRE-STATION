@@ -9,6 +9,7 @@ INCLUDEPATH += ../Incidents ../Equipements ../Vehicules
 SOURCES += \
     connection.cpp \
     main.cpp \
+    agent.cpp \
     firestation.cpp \
     logoanime.cpp \
     pageconnexion.cpp \
@@ -17,6 +18,7 @@ SOURCES += \
     ../Equipements/smart.cpp
 
 HEADERS += \
+    agent.h \
     connection.h \
     firestation.h \
     logoanime.h \

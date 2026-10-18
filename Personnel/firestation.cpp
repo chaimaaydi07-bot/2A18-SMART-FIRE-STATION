@@ -7,6 +7,7 @@
 #endif
 
 #include <QApplication>
+#include <QSqlQueryModel>
 #include <QComboBox>
 #include <QDateEdit>
 #include <QDateTime>
@@ -297,7 +298,7 @@ struct Seg {
 class BarChart : public QWidget
 {
 public:
-    explicit BarChart(const QList<Agent> &agents, QWidget *parent = nullptr)
+    explicit BarChart(const QList<FicheAgent> &agents, QWidget *parent = nullptr)
         : QWidget(parent), m_agents(agents)
     {
         setMinimumHeight(250);
@@ -314,7 +315,7 @@ protected:
         if (n == 0) { p.drawText(rect(), Qt::AlignCenter, "Aucun agent"); return; }
 
         int max = 1;
-        for (const Agent &a : m_agents) max = std::max(max, a.mois);
+        for (const FicheAgent &a : m_agents) max = std::max(max, a.mois);
 
         const int top = 26, bottom = 30;
         const int baseY = height() - bottom;
@@ -325,7 +326,7 @@ protected:
         const double ps = base.pointSizeF() > 0 ? base.pointSizeF() : 9.0;
 
         for (int i = 0; i < n; ++i) {
-            const Agent &a = m_agents[i];
+            const FicheAgent &a = m_agents[i];
             const int h = std::max(2, int(hMax * a.mois / max * m_prog));
             const int x = int(slot * i + (slot - barW) / 2.0);
 
@@ -354,7 +355,7 @@ protected:
     }
 
 private:
-    QList<Agent> m_agents;
+    QList<FicheAgent> m_agents;
     double m_prog = 0.0;
 };
 
@@ -968,15 +969,15 @@ QWidget *FireStation::creerStatsWidget()
     // --- calculs à partir des données
     const int total = int(m_agents.size());
     int nDispo = 0, nInterv = 0, nIndispo = 0, nOp = 0;
-    for (const Agent &a : m_agents) {
+    for (const FicheAgent &a : m_agents) {
         if (a.dispo == "Disponible") ++nDispo;
         else if (a.dispo == "En intervention") ++nInterv;
         else ++nIndispo;
         if (estOperationnel(a.poste)) ++nOp;
     }
-    QList<Agent> tri = m_agents;
+    QList<FicheAgent> tri = m_agents;
     std::stable_sort(tri.begin(), tri.end(),
-                     [](const Agent &x, const Agent &y) { return x.mois > y.mois; });
+                     [](const FicheAgent &x, const FicheAgent &y) { return x.mois > y.mois; });
 
     // --- cartes de chiffres (compteurs animés, apparition en cascade)
     auto *kp = new QHBoxLayout;
@@ -999,7 +1000,7 @@ QWidget *FireStation::creerStatsWidget()
     QVBoxLayout *lc = nullptr;
     QFrame *cChart = nouvelleCarte(&lc);
     lc->addWidget(etiquette("Charge de travail par agent", "h3"));
-    lc->addWidget(etiquette("Nombre d'interventions — 30 derniers jours", "sous"));
+    lc->addWidget(etiquette("Nombre d'interventions enregistrées (table INTERVENTION)", "sous"));
     lc->addWidget(new BarChart(tri), 1);
     mid->addWidget(cChart, 11);
 
@@ -1011,7 +1012,7 @@ QWidget *FireStation::creerStatsWidget()
                      {"Risques chimiques (NRBC)", 0, QColor("#6fa3e3")},
                      {"Secourisme", 0, QColor("#9fc2ee")},
                      {"Lutte contre l'incendie", 0, QColor("#cfe0f7")}};
-    for (const Agent &a : m_agents) {
+    for (const FicheAgent &a : m_agents) {
         if (!estOperationnel(a.poste)) continue;
         for (Seg &s : gr) if (s.label == a.grade)      ++s.n;
         for (Seg &s : sp) if (s.label == a.specialite) ++s.n;
@@ -1036,7 +1037,7 @@ QWidget *FireStation::creerStatsWidget()
     QList<Seg> dvV;
     for (const QString &d : DISPOS) {
         int n = 0;
-        for (const Agent &a : m_agents) if (a.dispo == d) ++n;
+        for (const FicheAgent &a : m_agents) if (a.dispo == d) ++n;
         if (n > 0) dvV.append({d, n, couleurDispo(d)});
     }
     QVBoxLayout *ld = nullptr;
@@ -1085,68 +1086,38 @@ void FireStation::exporterStatsPdf()
 }
 
 // ============================================================================
-//  Données de démonstration (à remplacer par votre base de données)
+//  Étape 1 : AFFICHER — les agents sont lus dans la table AGENT (Oracle)
 // ============================================================================
+void FireStation::chargerAgents()
+{
+    m_agents.clear();
+    QSqlQueryModel *model = m_agentTmp.afficher();      // requête SELECT dans la classe Agent
+    if (!m_agentTmp.derniereErreur().isEmpty())
+        erreurBase("Affichage", m_agentTmp.derniereErreur());
+    for (int r = 0; r < model->rowCount(); ++r) {
+        auto v = [&](int c) { return model->data(model->index(r, c)).toString(); };
+        FicheAgent a;
+        a.id = v(0); a.nom = v(1); a.prenom = v(2); a.poste = v(3); a.grade = v(4);
+        a.specialite = v(5); a.tel = v(6); a.dispo = v(7);
+        if (!v(8).isEmpty())
+            a.certs.append({v(8), QDate::fromString(v(9), "yyyy-MM-dd"),
+                            QDate::fromString(v(10), "yyyy-MM-dd")});
+        a.mdpHash = v(11);
+        a.mois = model->data(model->index(r, 12)).toInt();
+        m_agents.append(a);
+    }
+    delete model;
+}
+
+void FireStation::erreurBase(const QString &action, const QString &detail)
+{
+    QMessageBox::critical(this, "Base de données",
+                          QString("%1 impossible.\n\n%2").arg(action, detail));
+}
+
 void FireStation::chargerDonnees()
 {
-    const QDate t = QDate::currentDate();
-    auto ag = [&](QString id, QString nom, QString pre, QString poste, QString gr, QString sp,
-                  QString tel, QString dispo, QList<Certification> certs, int mois) {
-        Agent a;
-        a.id = id; a.nom = nom; a.prenom = pre; a.poste = poste; a.grade = gr;
-        a.specialite = sp; a.tel = tel; a.dispo = dispo; a.certs = certs; a.mois = mois;
-        m_agents.append(a);
-    };
-    ag("AGT-014", "Ben Ali", "Karim", "Pompier", "Sergent", "Sauvetage-déblaiement",
-       "+216 20 123 456", "Disponible",
-       {{C_PSE1, t.addDays(-165), t.addDays(200)}, {C_SD1, t.addDays(-300), t.addDays(65)}}, 14);
-    ag("AGT-015", "Trabelsi", "Sami", "Chef de caserne", "Capitaine", "Sauvetage-déblaiement",
-       "+216 22 555 010", "En intervention",
-       {{C_PSE1, t.addDays(-200), t.addDays(160)}, {C_SD1, t.addDays(-400), t.addDays(300)},
-        {C_SD2, t.addDays(-300), t.addDays(400)}, {C_GOC, t.addDays(-200), t.addDays(500)}}, 9);
-    ag("AGT-016", "Gharbi", "Amine", "Mécanicien", "Caporal", "",
-       "+216 98 765 432", "Disponible", {}, 16);
-    ag("AGT-017", "Jlassi", "Nour", "Secouriste", "Sergent", "Secourisme",
-       "+216 50 321 987", "En repos", {{C_PSE1, t.addDays(-353), t.addDays(12)}}, 6);
-    ag("AGT-018", "Mansouri", "Leila", "Responsable RH", "Lieutenant", "",
-       "+216 71 000 111", "Disponible", {}, 0);
-    ag("AGT-022", "Hammami", "Rim", "Administratif", "", "",
-       "+216 71 000 222", "Disponible", {}, 0);
-    ag("AGT-019", "Sassi", "Mohamed", "Maître-chien", "Caporal", "Recherche cynophile",
-       "+216 55 111 222", "Disponible",
-       {{C_PSE1, t.addDays(-100), t.addDays(250)}, {C_CYNO, t.addDays(-320), t.addDays(45)}}, 11);
-    ag("AGT-020", "Amri", "Hedi", "Pompier", "Lieutenant", "Risques chimiques (NRBC)",
-       "+216 52 333 444", "En formation",
-       {{C_PSE1, t.addDays(-150), t.addDays(200)}, {C_NRBC, t.addDays(-370), t.addDays(-5)}}, 4);
-    ag("AGT-021", "Ben Salah", "Walid", "Chauffeur", "Agent", "Lutte contre l'incendie",
-       "+216 53 555 666", "En congé", {}, 8);
-    ag("AGT-023", "Mejri", "Khaled", "Dispatcher", "Sergent", "",
-       "+216 58 444 777", "Disponible", {}, 0);
-    ag("AGT-024", "Ferchichi", "Sonia", "Responsable des équipements", "Adjudant", "",
-       "+216 97 222 888", "Disponible", {}, 0);
-    ag("AGT-025", "Dridi", "Youssef", "Pompier", "Adjudant", "Lutte contre l'incendie",
-       "+216 21 600 111", "Disponible",
-       {{C_PSE1, t.addDays(-90), t.addDays(275)}, {C_FDF, t.addDays(-120), t.addDays(245)}}, 12);
-    ag("AGT-026", "Khelifi", "Anis", "Chauffeur", "Caporal", "Sauvetage-déblaiement",
-       "+216 24 700 222", "Disponible",
-       {{C_PSE1, t.addDays(-60), t.addDays(305)}, {C_COND, t.addDays(-200), t.addDays(165)}}, 10);
-    ag("AGT-027", "Hamdi", "Ines", "Secouriste", "Agent", "Secourisme",
-       "+216 26 800 333", "Disponible",
-       {{C_PSE1, t.addDays(-30), t.addDays(335)}, {C_PSE2, t.addDays(-30), t.addDays(335)}}, 7);
-    ag("AGT-028", "Saidi", "Bilel", "Pompier", "Caporal", "Sauvetage-déblaiement",
-       "+216 29 900 444", "Disponible",
-       {{C_PSE1, t.addDays(-45), t.addDays(320)}, {C_SD1, t.addDays(-45), t.addDays(320)}}, 9);
-
-    // Comptes de démonstration (mots de passe chiffrés, jamais stockés en clair)
-    const QMap<QString, QString> mdpDemo = {
-        {"AGT-018", "rh2026"},       // Responsable RH
-        {"AGT-015", "chef2026"},     // Chef de caserne
-        {"AGT-023", "disp2026"},     // Dispatcher
-        {"AGT-016", "meca2026"},     // Mécanicien
-        {"AGT-024", "equip2026"},    // Responsable des équipements
-    };
-    for (Agent &a : m_agents)
-        if (mdpDemo.contains(a.id)) a.mdpHash = PageConnexion::hacher(mdpDemo.value(a.id));
+    chargerAgents();
 }
 
 // ============================================================================
@@ -1155,7 +1126,7 @@ void FireStation::chargerDonnees()
 QList<Compte> FireStation::comptes() const
 {
     QList<Compte> liste;
-    for (const Agent &a : m_agents)
+    for (const FicheAgent &a : m_agents)
         if (!a.mdpHash.isEmpty() && ACCES.contains(a.poste))   // compte actif seulement
             liste.append({a.id, a.nom + " " + a.prenom, a.poste, a.mdpHash, a.tel});
     return liste;
@@ -1166,7 +1137,7 @@ void FireStation::majUtilisateurConnecte()
     // Le nom est relu dans la liste des agents : s'il est modifié, le menu suit
     const int i = indexParId(m_idConnecte);
     if (i < 0) return;
-    const Agent &a = m_agents[i];
+    const FicheAgent &a = m_agents[i];
     lblActeur->setText(QString("Connecté :<br><b>%1</b><br>%2")
                            .arg((a.nom + " " + a.prenom).toHtmlEscaped(), m_roleConnecte));
 }
@@ -1230,7 +1201,7 @@ void FireStation::chargerSessions()
 QString FireStation::nouvelId() const
 {
     int max = 0;
-    for (const Agent &a : m_agents)
+    for (const FicheAgent &a : m_agents)
         max = std::max(max, a.id.mid(4).toInt());
     return QString("AGT-%1").arg(max + 1, 3, 10, QChar('0'));
 }
@@ -1342,7 +1313,7 @@ void FireStation::viderCerts()
     m_certRows.clear();
 }
 
-bool FireStation::lireFormulaire(Agent &a, QString &erreur)
+bool FireStation::lireFormulaire(FicheAgent &a, QString &erreur)
 {
     a.nom    = edNom->text().trimmed();
     a.prenom = edPrenom->text().trimmed();
@@ -1387,7 +1358,7 @@ bool FireStation::lireFormulaire(Agent &a, QString &erreur)
 
 void FireStation::ajouter()
 {
-    Agent a; QString err;
+    FicheAgent a; QString err;
     if (!lireFormulaire(a, err)) { lblErreur->setText(err); return; }
     a.id = nouvelId();
     m_agents.append(a);
@@ -1401,9 +1372,9 @@ void FireStation::modifier()
 {
     const int i = indexParId(m_editingId);
     if (i < 0) return;
-    Agent a; QString err;
+    FicheAgent a; QString err;
     if (!lireFormulaire(a, err)) { lblErreur->setText(err); return; }
-    Agent &old = m_agents[i];
+    FicheAgent &old = m_agents[i];
     old.nom = a.nom; old.prenom = a.prenom; old.poste = a.poste; old.grade = a.grade;
     old.specialite = a.specialite; old.tel = a.tel; old.dispo = a.dispo; old.certs = a.certs;
     if (!a.mdpHash.isEmpty()) old.mdpHash = a.mdpHash;   // mot de passe vide = inchangé
@@ -1436,7 +1407,7 @@ void FireStation::chargerDansFormulaire(const QString &id)
 {
     const int i = indexParId(id);
     if (i < 0) return;
-    const Agent &a = m_agents[i];
+    const FicheAgent &a = m_agents[i];
     m_editingId = id;
     lblFormTitle->setText("✎ Modifier " + id);
     edNom->setText(a.nom); edPrenom->setText(a.prenom); edTel->setText(a.tel);
@@ -1457,7 +1428,7 @@ void FireStation::consulter(const QString &id)
 {
     const int i = indexParId(id);
     if (i < 0) return;
-    const Agent &a = m_agents[i];
+    const FicheAgent &a = m_agents[i];
     QString certs;
     for (const Certification &c : a.certs)
         certs += QString("<li>%1 — obtenue le %2, échéance %3</li>")
@@ -1525,8 +1496,8 @@ void FireStation::rafraichir()
     // Recherche : sur le critère choisi (Nom, Téléphone ou Certification)
     const QString critere = cbCritere->currentText();
     const QString saisie  = critere == "Téléphone" ? QString(q).remove(' ') : q;
-    QList<const Agent *> L;
-    for (const Agent &a : m_agents) {
+    QList<const FicheAgent *> L;
+    for (const FicheAgent &a : m_agents) {
         if (!f.isEmpty() && a.poste != f) continue;
         QString valeur;
         if (critere == "Téléphone") {
@@ -1544,14 +1515,14 @@ void FireStation::rafraichir()
 
     // Tri : sur le critère choisi (Disponibilité, Grade ou Spécialité)
     const QString tri = cbTri->currentText();
-    std::stable_sort(L.begin(), L.end(), [&](const Agent *x, const Agent *y) {
+    std::stable_sort(L.begin(), L.end(), [&](const FicheAgent *x, const FicheAgent *y) {
         if (tri == "Grade")      return GRADES.indexOf(x->grade) > GRADES.indexOf(y->grade);
         if (tri == "Spécialité") return QString::localeAwareCompare(x->specialite, y->specialite) < 0;
         return ordreDispo(x->dispo) < ordreDispo(y->dispo);
     });
 
     tblAgents->setRowCount(0);
-    for (const Agent *a : L) {
+    for (const FicheAgent *a : L) {
         const int r = tblAgents->rowCount();
         tblAgents->insertRow(r);
         tblAgents->setRowHeight(r, 48);
@@ -1645,7 +1616,7 @@ void FireStation::mettreAJourAlertes()
     int n = 0;
     int nRecos = 0;
     QSet<QString> agentsRecos;
-    for (const Agent &a : m_agents) {
+    for (const FicheAgent &a : m_agents) {
         const QString who = QString("%1 — %2 %3").arg(a.id, a.nom, a.prenom);
 
         // Innovation 1 : renouvellement des certifications (SMS envoyé à l'agent)
@@ -1656,7 +1627,7 @@ void FireStation::mettreAJourAlertes()
                                        : QString("expire dans %1 jour(s)").arg(d);
             const QString sms = m_smsEnvoyes.contains(cleSms(a, c))
                                     ? " — SMS de rappel envoyé à l'agent" : "";
-            const Agent copie = a;
+            const FicheAgent copie = a;
             const Certification cert = c;
             ajouterAlerte("Certification à renouveler",
                           QString("%1 — %2 %3%4").arg(who, c.nom, etat, sms), false, a.id,
@@ -1692,7 +1663,7 @@ void FireStation::mettreAJourAlertes()
 // ============================================================================
 //  Innovation 1 : SMS de renouvellement des certifications
 // ============================================================================
-QString FireStation::cleSms(const Agent &a, const Certification &c) const
+QString FireStation::cleSms(const FicheAgent &a, const Certification &c) const
 {
     return a.id + "|" + c.nom + "|" + c.echeance.toString(Qt::ISODate);
 }
@@ -1702,7 +1673,7 @@ QString FireStation::cleSms(const Agent &a, const Certification &c) const
 void FireStation::verifierEcheancesSms()
 {
     const QDate today = QDate::currentDate();
-    for (const Agent &a : m_agents) {
+    for (const FicheAgent &a : m_agents) {
         for (const Certification &c : a.certs) {
             const int d = int(today.daysTo(c.echeance));
             if (d > ALERTE_JOURS) continue;
@@ -1765,7 +1736,7 @@ void FireStation::afficherJournalSms()
 // Pour un agent, détermine les certifications requises par son poste, sa
 // spécialité et son grade, puis propose la prochaine session disponible
 // (nom, lieu, date) pour celles qui manquent ou qui arrivent à échéance.
-QList<Recommandation> FireStation::recommandationsPour(const Agent &a) const
+QList<Recommandation> FireStation::recommandationsPour(const FicheAgent &a) const
 {
     const QDate today = QDate::currentDate();
     const int g = int(GRADES.indexOf(a.grade));
@@ -1841,7 +1812,7 @@ void FireStation::inscrire(const QString &agentId, int sessionIndex)
     const int i = indexParId(agentId);
     if (i < 0 || sessionIndex < 0 || sessionIndex >= m_sessions.size()) return;
     SessionFormation &s = m_sessions[sessionIndex];
-    const Agent &a = m_agents[i];
+    const FicheAgent &a = m_agents[i];
     if (s.places <= 0 || s.inscrits.contains(agentId)) return;
 
     if (QMessageBox::question(this, "Inscription",
@@ -1884,7 +1855,7 @@ QWidget *FireStation::creerFormationsWidget()
     rf->addWidget(new QLabel("Agent :"));
     auto *cb = new QComboBox;
     cb->addItem("Tous les agents", QString());
-    for (const Agent &a : m_agents)
+    for (const FicheAgent &a : m_agents)
         cb->addItem(QString("%1 — %2 %3").arg(a.id, a.nom, a.prenom), a.id);
     const int sel = cb->findData(m_formFiltre);
     cb->setCurrentIndex(sel < 0 ? 0 : sel);
@@ -1898,7 +1869,7 @@ QWidget *FireStation::creerFormationsWidget()
 
     // --- calcul des recommandations
     QList<Recommandation> recos;
-    for (const Agent &a : m_agents) {
+    for (const FicheAgent &a : m_agents) {
         if (!m_formFiltre.isEmpty() && a.id != m_formFiltre) continue;
         recos += recommandationsPour(a);
     }
@@ -1941,7 +1912,7 @@ QWidget *FireStation::creerFormationsWidget()
 
     for (int r = 0; r < recos.size(); ++r) {
         const Recommandation &rc = recos[r];
-        const Agent &a = m_agents[indexParId(rc.agentId)];
+        const FicheAgent &a = m_agents[indexParId(rc.agentId)];
         t->setRowHeight(r, 46);
         t->setItem(r, 0, new QTableWidgetItem(a.nom + " " + a.prenom));
         auto *ic = new QTableWidgetItem(rc.certification);
@@ -2086,8 +2057,8 @@ void FireStation::exporterPdf()
 bool FireStation::genererPlanningPdf(const QString &chemin, QDate debut, int agentsParGarde)
 {
     // --- Agents pouvant être planifiés
-    QList<const Agent *> equipe, exclus;
-    for (const Agent &a : m_agents) {
+    QList<const FicheAgent *> equipe, exclus;
+    for (const FicheAgent &a : m_agents) {
         if (!estOperationnel(a.poste)) continue;
         if (a.dispo == "En congé" || a.dispo == "En formation") exclus << &a;
         else equipe << &a;
@@ -2114,42 +2085,42 @@ bool FireStation::genererPlanningPdf(const QString &chemin, QDate debut, int age
     const int sergent = int(GRADES.indexOf("Sergent"));
     // Plafond de gardes par agent sur la semaine (répartition équitable)
     const int plafond = (14 * parGarde + int(equipe.size()) - 1) / int(equipe.size());
-    QMap<const Agent *, int> nbJour, nbNuit;
-    QList<const Agent *> precedente;
-    QVector<QList<const Agent *>> gardes(14);
+    QMap<const FicheAgent *, int> nbJour, nbNuit;
+    QList<const FicheAgent *> precedente;
+    QVector<QList<const FicheAgent *>> gardes(14);
 
     for (int g = 0; g < 14; ++g) {
-        QList<const Agent *> choisis;
-        auto nbTotal = [&](const Agent *a) { return nbJour.value(a) + nbNuit.value(a); };
+        QList<const FicheAgent *> choisis;
+        auto nbTotal = [&](const FicheAgent *a) { return nbJour.value(a) + nbNuit.value(a); };
         // candidats libres, triés : le moins de gardes d'abord
         auto candidats = [&](auto filtre) {
-            QList<const Agent *> c;
-            for (const Agent *a : equipe)
+            QList<const FicheAgent *> c;
+            for (const FicheAgent *a : equipe)
                 if (!choisis.contains(a) && !precedente.contains(a) && nbTotal(a) < plafond && filtre(a))
                     c << a;
-            std::stable_sort(c.begin(), c.end(), [&](const Agent *x, const Agent *y) {
+            std::stable_sort(c.begin(), c.end(), [&](const FicheAgent *x, const FicheAgent *y) {
                 return nbTotal(x) < nbTotal(y);
             });
             return c;
         };
         // 1) un gradé, qui sera chef de garde
-        const auto grades = candidats([&](const Agent *a) { return GRADES.indexOf(a->grade) >= sergent; });
+        const auto grades = candidats([&](const FicheAgent *a) { return GRADES.indexOf(a->grade) >= sergent; });
         if (!grades.isEmpty()) choisis << grades.first();
         const bool sansChauffeur = (g == 0 && chauffeursDeNuit);
         // 2) un chauffeur pour conduire l'engin
         if (choisis.size() < parGarde && !sansChauffeur) {
-            const auto chauffeurs = candidats([](const Agent *a) { return a->poste == "Chauffeur"; });
+            const auto chauffeurs = candidats([](const FicheAgent *a) { return a->poste == "Chauffeur"; });
             if (!chauffeurs.isEmpty()) choisis << chauffeurs.first();
         }
         // 3) compléter l'équipe
-        auto autres = candidats([&](const Agent *a) { return !(sansChauffeur && a->poste == "Chauffeur"); });
+        auto autres = candidats([&](const FicheAgent *a) { return !(sansChauffeur && a->poste == "Chauffeur"); });
         while (choisis.size() < parGarde && !autres.isEmpty()) choisis << autres.takeFirst();
         // 4) en dernier recours (effectif trop faible), lever les contraintes
-        for (const Agent *a : equipe)
+        for (const FicheAgent *a : equipe)
             if (choisis.size() < parGarde && !choisis.contains(a)) choisis << a;
 
-        for (const Agent *a : choisis) (g % 2 == 0 ? nbJour : nbNuit)[a]++;
-        std::stable_sort(choisis.begin(), choisis.end(), [](const Agent *x, const Agent *y) {
+        for (const FicheAgent *a : choisis) (g % 2 == 0 ? nbJour : nbNuit)[a]++;
+        std::stable_sort(choisis.begin(), choisis.end(), [](const FicheAgent *x, const FicheAgent *y) {
             return GRADES.indexOf(x->grade) > GRADES.indexOf(y->grade);   // chef de garde en premier
         });
         gardes[g] = choisis;
@@ -2158,15 +2129,15 @@ bool FireStation::genererPlanningPdf(const QString &chemin, QDate debut, int age
 
     // --- Mise en page HTML
     QString chef = "—", rh = "—";
-    for (const Agent &ag : m_agents) {
+    for (const FicheAgent &ag : m_agents) {
         if (ag.poste == "Chef de caserne" && chef == "—") chef = ag.nom + " " + ag.prenom;
         if (ag.poste == "Responsable RH" && rh == "—")   rh   = ag.nom + " " + ag.prenom;
     }
     const QStringList jours = {"Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"};
-    auto cellule = [](const QList<const Agent *> &l) {
+    auto cellule = [](const QList<const FicheAgent *> &l) {
         QStringList lignes;
         for (int i = 0; i < l.size(); ++i) {
-            const Agent *a = l[i];
+            const FicheAgent *a = l[i];
             lignes << QString("%1%2 %3 %4 <span style='color:#777777'>(%5)</span>")
                           .arg(i == 0 ? "&#9733; " : "", a->grade, a->nom.toHtmlEscaped(),
                                a->prenom.toHtmlEscaped(), a->poste);
@@ -2184,18 +2155,18 @@ bool FireStation::genererPlanningPdf(const QString &chemin, QDate debut, int age
     }
 
     QString lignesBilan;
-    QList<const Agent *> tries = equipe;
-    std::stable_sort(tries.begin(), tries.end(), [](const Agent *x, const Agent *y) {
+    QList<const FicheAgent *> tries = equipe;
+    std::stable_sort(tries.begin(), tries.end(), [](const FicheAgent *x, const FicheAgent *y) {
         return GRADES.indexOf(x->grade) > GRADES.indexOf(y->grade);
     });
-    for (const Agent *a : tries)
+    for (const FicheAgent *a : tries)
         lignesBilan += QString("<tr><td>%1 %2</td><td>%3</td><td>%4</td><td>%5</td>"
                                "<td align='center'>%6</td><td align='center'>%7</td><td align='center'><b>%8</b></td></tr>")
                            .arg(a->nom.toHtmlEscaped(), a->prenom.toHtmlEscaped(), a->poste, a->grade, a->tel)
                            .arg(nbJour.value(a)).arg(nbNuit.value(a)).arg(nbJour.value(a) + nbNuit.value(a));
 
     QStringList nomsExclus;
-    for (const Agent *a : exclus) nomsExclus << QString("%1 %2 (%3)").arg(a->nom, a->prenom, a->dispo);
+    for (const FicheAgent *a : exclus) nomsExclus << QString("%1 %2 (%3)").arg(a->nom, a->prenom, a->dispo);
     const QString remarque = parGarde < agentsParGarde
                                  ? QString("<p style='color:#b3211c'>Effectif insuffisant : %1 agent(s) par garde au lieu de %2.</p>")
                                        .arg(parGarde).arg(agentsParGarde)

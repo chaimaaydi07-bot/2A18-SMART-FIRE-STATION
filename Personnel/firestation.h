@@ -9,6 +9,7 @@
 #include <functional>
 #include "pageconnexion.h"
 #include "incidents.h"
+#include "agent.h"
 
 class QLineEdit;
 class QComboBox;
@@ -30,13 +31,14 @@ struct Certification {
     QDate   echeance;
 };
 
-// Agent de l'USPC
+// Fiche d'un agent telle qu'elle est affichée par l'interface (couche Vue).
+// Les données viennent de la table AGENT via la classe Agent (couche Modèle).
 // Les utilisateurs de l'application sont des agents qui ont un mot de passe ;
 // leur rôle (droits d'accès) correspond à leur poste.
-struct Agent {
+struct FicheAgent {
     QString id, nom, prenom, poste, grade, specialite, tel, dispo;
     QList<Certification> certs;
-    int mois = 0;                   // interventions sur les 30 derniers jours (statistiques)
+    int mois = 0;                   // nombre d'interventions (table INTERVENTION, statistiques)
     QString mdpHash;                // mot de passe chiffré (vide = n'utilise pas l'application)
 };
 
@@ -107,8 +109,10 @@ private:
     QWidget *creerFormationsWidget();
 
     void chargerDonnees();
+    void chargerAgents();                       // lit la table AGENT (Agent::afficher)
+    void erreurBase(const QString &action, const QString &detail);
     void chargerSessions();
-    bool lireFormulaire(Agent &a, QString &erreur);
+    bool lireFormulaire(FicheAgent &a, QString &erreur);
     QString nouvelId() const;
     int indexParId(const QString &id) const;
 
@@ -132,13 +136,14 @@ private:
 
     // Innovation 1 : SMS de renouvellement des certifications
     void verifierEcheancesSms();           // envoi automatique
-    QString cleSms(const Agent &a, const Certification &c) const;
+    QString cleSms(const FicheAgent &a, const Certification &c) const;
 
     // Innovation 2 : recommandation de certifications
-    QList<Recommandation> recommandationsPour(const Agent &a) const;
+    QList<Recommandation> recommandationsPour(const FicheAgent &a) const;
     void inscrire(const QString &agentId, int sessionIndex);
 
-    QList<Agent>            m_agents;
+    Agent                   m_agentTmp;     // objet Agent utilisé pour appeler le CRUD
+    QList<FicheAgent>            m_agents;
     QList<SessionFormation> m_sessions;
     QString                 m_editingId;
     QSet<QString>           m_smsEnvoyes;   // certifications déjà notifiées par SMS
