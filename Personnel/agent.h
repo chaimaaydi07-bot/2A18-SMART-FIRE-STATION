@@ -62,6 +62,8 @@ public:
     bool ajouter();                              // Étape 2 : AJOUTER
     bool telephoneExiste(QString telephone, QString saufId);   // contrôle de saisie
     bool posteExiste(QString poste, QString saufId);           // contrôle : un seul chef
+    bool modifier();                             // Étape 3 : MODIFIER
+    bool modifierMotDePasse(QString id, QString motDePasse);   // mot de passe oublié
 };
 
 #endif // AGENT_H

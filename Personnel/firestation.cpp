@@ -1402,12 +1402,13 @@ void FireStation::modifier()
     if (i < 0) return;
     FicheAgent a; QString err;
     if (!lireFormulaire(a, err)) { lblErreur->setText(err); return; }
-    FicheAgent &old = m_agents[i];
-    old.nom = a.nom; old.prenom = a.prenom; old.poste = a.poste; old.grade = a.grade;
-    old.specialite = a.specialite; old.tel = a.tel; old.dispo = a.dispo; old.certs = a.certs;
-    if (!a.mdpHash.isEmpty()) old.mdpHash = a.mdpHash;   // mot de passe vide = inchangé
-    if (!ACCES.contains(old.poste)) old.mdpHash.clear();  // nouveau poste sans accès : compte désactivé
-    const QString idModifie = old.id;
+    a.id = m_agents[i].id;
+    if (a.mdpHash.isEmpty()) a.mdpHash = m_agents[i].mdpHash;   // mot de passe vide = inchangé
+    if (!ACCES.contains(a.poste)) a.mdpHash.clear();            // poste sans accès : compte désactivé
+    Agent agent = versAgent(a);                                     // Étape 3 : MODIFIER
+    if (!agent.modifier()) { erreurBase("Modification", agent.derniereErreur()); return; }
+    const QString idModifie = a.id;
+    chargerAgents();                       // actualiser l'affichage après la modification
     reinitialiser();
     verifierEcheancesSms();
     rafraichir();
@@ -1735,8 +1736,11 @@ void FireStation::envoyerSms(const QString &tel, const QString &message, const Q
 // Réinitialisation du mot de passe depuis la page de connexion (code reçu par SMS)
 void FireStation::changerMotDePasse(const QString &identifiant, const QString &mdpHash)
 {
-    const int i = indexParId(identifiant);
-    if (i >= 0) m_agents[i].mdpHash = mdpHash;
+    if (!m_agentTmp.modifierMotDePasse(identifiant, mdpHash)) {
+        erreurBase("Changement du mot de passe", m_agentTmp.derniereErreur());
+        return;
+    }
+    chargerAgents();
 }
 
 void FireStation::afficherJournalSms()

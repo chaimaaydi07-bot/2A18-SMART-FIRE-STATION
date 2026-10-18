@@ -118,3 +118,44 @@ bool Agent::posteExiste(QString poste, QString saufId)
     query.bindValue(":id", saufId.isEmpty() ? QString("-") : saufId);
     return query.exec() && query.next() && query.value(0).toInt() > 0;
 }
+
+// ======================================================= Étape 3 : MODIFIER
+bool Agent::modifier()
+{
+    QSqlQuery query;
+    query.prepare("UPDATE AGENT SET nom = :nom, prenom = :prenom, poste = :poste, "
+                  "grade = :grade, specialite = :specialite, telephone = :telephone, "
+                  "disponibilite = :disponibilite, certification = :certification, "
+                  "date_obtention = TO_DATE(:obtention, 'YYYY-MM-DD'), "
+                  "date_echeance = TO_DATE(:echeance, 'YYYY-MM-DD'), "
+                  "mot_de_passe = :motDePasse "
+                  "WHERE id_agent = :id");
+    query.bindValue(":nom", nom);
+    query.bindValue(":prenom", prenom);
+    query.bindValue(":poste", poste);
+    query.bindValue(":grade", grade);
+    query.bindValue(":specialite", specialite);
+    query.bindValue(":telephone", telephone);
+    query.bindValue(":disponibilite", disponibilite);
+    query.bindValue(":certification", certification);
+    query.bindValue(":obtention", texteDate(dateObtention));
+    query.bindValue(":echeance", texteDate(dateEcheance));
+    query.bindValue(":motDePasse", motDePasse);
+    query.bindValue(":id", id);
+
+    const bool ok = query.exec() && query.numRowsAffected() > 0;
+    erreur = ok ? QString() : query.lastError().text();
+    return ok;
+}
+
+// Mot de passe oublié (code reçu par SMS sur la page de connexion)
+bool Agent::modifierMotDePasse(QString id, QString motDePasse)
+{
+    QSqlQuery query;
+    query.prepare("UPDATE AGENT SET mot_de_passe = :motDePasse WHERE id_agent = :id");
+    query.bindValue(":motDePasse", motDePasse);
+    query.bindValue(":id", id);
+    const bool ok = query.exec();
+    erreur = ok ? QString() : query.lastError().text();
+    return ok;
+}
