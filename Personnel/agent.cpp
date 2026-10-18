@@ -106,3 +106,15 @@ bool Agent::telephoneExiste(QString telephone, QString saufId)
     query.bindValue(":id", saufId.isEmpty() ? QString("-") : saufId);
     return query.exec() && query.next() && query.value(0).toInt() > 0;
 }
+
+// Contrôle de cohérence : vrai si un autre agent occupe déjà ce poste
+// (utilisé pour le Chef de caserne, qui doit être unique).
+bool Agent::posteExiste(QString poste, QString saufId)
+{
+    QSqlQuery query;
+    query.prepare("SELECT COUNT(*) FROM AGENT WHERE poste = :poste "
+                  "AND id_agent <> :id");
+    query.bindValue(":poste", poste);
+    query.bindValue(":id", saufId.isEmpty() ? QString("-") : saufId);
+    return query.exec() && query.next() && query.value(0).toInt() > 0;
+}

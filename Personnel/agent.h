@@ -61,6 +61,7 @@ public:
     QSqlQueryModel *afficher();                  // Étape 1 : AFFICHER
     bool ajouter();                              // Étape 2 : AJOUTER
     bool telephoneExiste(QString telephone, QString saufId);   // contrôle de saisie
+    bool posteExiste(QString poste, QString saufId);           // contrôle : un seul chef
 };
 
 #endif // AGENT_H

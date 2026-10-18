@@ -1349,6 +1349,10 @@ bool FireStation::lireFormulaire(FicheAgent &a, QString &erreur)
     if (m_agentTmp.telephoneExiste(a.tel, m_editingId)) {      // contrôle dans la classe Agent
         erreur = "Ce numéro de téléphone est déjà utilisé par un autre agent."; return false;
     }
+    // Contrôle de cohérence : une caserne n'a qu'un seul chef
+    if (a.poste == "Chef de caserne" && m_agentTmp.posteExiste(a.poste, m_editingId)) {
+        erreur = "Il y a déjà un chef de caserne : une caserne n'a qu'un seul chef."; return false;
+    }
     const QString mdp = edMdp->text();
     if (ACCES.contains(a.poste) && mdp.isEmpty()) {
         const int i = indexParId(m_editingId);
