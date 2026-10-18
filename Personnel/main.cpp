@@ -3,8 +3,6 @@
 #include <QStackedWidget>
 #include <QIcon>
 #include <QColor>
-#include <QInputDialog>
-#include <QLineEdit>
 #include <QMessageBox>
 #include <QDebug>
 
@@ -44,51 +42,32 @@ int main(int argc, char *argv[])
     p.setColor(QPalette::HighlightedText, QColor("#222222"));
     app.setPalette(p);
 
-    // Accès à l'unique instance de Connection.
-    Connection &base = Connection::createInstance();
+    // On récupère l'instance unique du singleton (code de l'atelier)
+    Connection& c = Connection::createInstance();
 
-    // Mot de passe demandé au démarrage.
-    while (true) {
-        bool accepte = false;
+    // On tente d'établir la connexion
+    bool test = c.createConnection();
 
-        const QString motDePasse = QInputDialog::getText(
+    //************************Test Connection BD**************************//
+    if (test) {
+        QMessageBox::information(
             nullptr,
-            "Connexion Oracle",
-            "Mot de passe Oracle de l'utilisateur smartfire :",
-            QLineEdit::Password,
-            QString(),
-            &accepte
+            QObject::tr("Base de données"),
+            QObject::tr("Connexion réussie.")
             );
-
-        if (!accepte) {
-            base.closeConnection();
-            return 0;
-        }
-
-        if (base.createConnection(motDePasse)) {
-            qDebug() << "Connexion Oracle établie pour smartfire.";
-
-            QMessageBox::information(
-                nullptr,
-                "Base de données",
-                "Connexion Oracle réussie avec smartfire."
-                );
-
-            break;
-        }
-
-        QMessageBox::warning(
+    } else {
+        QMessageBox::critical(
             nullptr,
-            "Échec de connexion Oracle",
-            QString("Impossible de se connecter à Oracle.\n\n")
-                + base.lastError()
-                + "\n\nCliquez sur OK pour réessayer."
+            QObject::tr("Base de données"),
+            QObject::tr("Échec de la connexion.\nCliquez sur Annuler pour quitter."),
+            QMessageBox::Cancel
             );
+        return 0;
     }
 
     int resultat = 0;
 
-    // Les fenêtres seront détruites avant de fermer la base.
+    // Fenêtre unique : page de connexion puis application
     {
         QStackedWidget fenetre;
         fenetre.setWindowTitle("USPC — Smart Fire Station");
@@ -147,9 +126,6 @@ int main(int argc, char *argv[])
 
         resultat = app.exec();
     }
-
-    // Fermer la connexion avant de détruire QApplication.
-    base.closeConnection();
 
     return resultat;
 }
