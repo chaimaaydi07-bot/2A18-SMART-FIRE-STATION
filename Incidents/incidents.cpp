@@ -4,9 +4,6 @@
 #include <QPageLayout>
 #include <QPageSize>
 #include <QTextDocument>
-#include <QSqlDatabase>
-#include <QSqlQuery>
-#include <QSqlError>
 #include <QUuid>
 
 #include <algorithm>
@@ -14,22 +11,11 @@
 #include <cmath>
 
 #include "incidents.h"
+#include "incident.h"
 
 namespace incidents {
 
 static constexpr double PI = 3.14159265358979323846;
-
-struct Incident {
-    QString id;
-    QString type;
-    QDateTime date;
-    QString address;
-    QString gravity;
-    int victims = 0;
-    QString description;
-    QString status;
-    bool archived = false;
-};
 
 static QString incidentNumber(const QString &id)
 {
@@ -1366,15 +1352,6 @@ private:
         return true;
     }
 
-    QSqlDatabase database() const
-    {
-        // Connexion par défaut ouverte par le Singleton.
-        return QSqlDatabase::database(
-            QSqlDatabase::defaultConnection,
-            false
-            );
-    }
-
     void showDatabaseError(
         const QString &action,
         const QString &detail
@@ -1391,155 +1368,36 @@ private:
 
     bool loadIncidents()
     {
-        QSqlDatabase db = database();
+        QString erreur;
 
-        if (!db.isValid() || !db.isOpen()) {
-            showDatabaseError(
-                "Chargement impossible",
-                "La connexion Oracle est fermée. "
-                "Relancez FireStation et connectez-vous à smartfire."
-                );
-
+        if (!Incident::afficher(incidents, erreur)) {
+            showDatabaseError("Chargement impossible", erreur);
             return false;
         }
 
-        QSqlQuery query(db);
-        query.setForwardOnly(true);
+        return true;
+    }
 
-        if (!query.exec(
-                "SELECT id_incident, type, "
-                "TO_CHAR(date_heure, 'YYYY-MM-DD HH24:MI:SS'), "
-                "adresse, niveau_gravite, nb_victimes, description, statut "
-                "FROM INCIDENT "
-                "ORDER BY date_heure DESC, id_incident"
-                )) {
-            showDatabaseError(
-                "Chargement impossible",
-                query.lastError().text()
-                );
-
-            return false;
-        }
-
+    bool reloadAfterWrite(const QString &operation)
+    {
+        QString erreur;
         std::vector<Incident> loaded;
 
-        while (query.next()) {
-            Incident incident;
-
-            incident.id = query.value(0).toString();
-            incident.type = query.value(1).toString();
-
-            incident.date = QDateTime::fromString(
-                query.value(2).toString(),
-                "yyyy-MM-dd HH:mm:ss"
-                );
-
-            incident.address = query.value(3).toString();
-            incident.gravity = query.value(4).toString();
-            incident.victims = query.value(5).toInt();
-            incident.description = query.value(6).toString();
-            incident.status = query.value(7).toString();
-
-            incident.archived =
-                incident.status == "Archivé";
-
-            loaded.push_back(incident);
-        }
-
-        if (query.lastError().isValid()) {
-            showDatabaseError(
-                "Lecture interrompue",
-                query.lastError().text()
+        if (!Incident::afficher(loaded, erreur)) {
+            QMessageBox::warning(
+                this,
+                "Opération enregistrée",
+                operation +
+                    " a réussi dans Oracle, mais la liste n'a pas pu "
+                    "être actualisée.\n\n" + erreur
                 );
 
             return false;
         }
 
         incidents = std::move(loaded);
-        return true;
-    }
-
-    bool executeWrite(
-        const QString &sql,
-        const QVariantList &values,
-        const QString &action,
-        bool mustExist = false
-        )
-    {
-        QSqlDatabase db = database();
-
-        if (!db.isValid() || !db.isOpen()) {
-            showDatabaseError(
-                action,
-                "La connexion Oracle est fermée."
-                );
-
-            return false;
-        }
-
-        if (!db.transaction()) {
-            showDatabaseError(
-                action,
-                db.lastError().text()
-                );
-
-            return false;
-        }
-
-        QSqlQuery query(db);
-
-        if (!query.prepare(sql)) {
-            const QString error =
-                query.lastError().text();
-
-            query.finish();
-            db.rollback();
-
-            showDatabaseError(action, error);
-            return false;
-        }
-
-        for (const QVariant &value : values)
-            query.addBindValue(value);
-
-        if (!query.exec()) {
-            const QString error =
-                query.lastError().text();
-
-            query.finish();
-            db.rollback();
-
-            showDatabaseError(action, error);
-            return false;
-        }
-
-        const qint64 affected =
-            query.numRowsAffected();
-
-        query.finish();
-
-        if (mustExist && affected == 0) {
-            db.rollback();
-
-            showDatabaseError(
-                action,
-                "Cet incident a été supprimé ou archivé ailleurs. "
-                "Revenez sur le module pour actualiser la liste."
-                );
-
-            return false;
-        }
-
-        if (!db.commit()) {
-            const QString error =
-                db.lastError().text();
-
-            db.rollback();
-
-            showDatabaseError(action, error);
-            return false;
-        }
-
+        clearForm();
+        refreshTable();
         return true;
     }
 
@@ -1586,32 +1444,14 @@ private:
 
         copyFormToIncident(incident);
 
-        if (!executeWrite(
-                "INSERT INTO INCIDENT "
-                "(id_incident, type, date_heure, adresse, "
-                "niveau_gravite, nb_victimes, description, statut) "
-                "VALUES "
-                "(?, ?, TO_DATE(?, 'YYYY-MM-DD HH24:MI:SS'), "
-                "?, ?, ?, ?, ?)",
-                {
-                    incident.id,
-                    incident.type,
-                    incident.date.toString("yyyy-MM-dd HH:mm:ss"),
-                    incident.address,
-                    incident.gravity,
-                    incident.victims,
-                    incident.description,
-                    incident.status
-                },
-                "Ajout impossible"
-                )) {
+        QString erreur;
+
+        if (!incident.ajouter(erreur)) {
+            showDatabaseError("Ajout impossible", erreur);
             return;
         }
 
-        incidents.push_back(incident);
-
-        clearForm();
-        refreshTable();
+        reloadAfterWrite("L'ajout");
     }
 
     void editIncident()
@@ -1634,37 +1474,14 @@ private:
         Incident updated = *incident;
         copyFormToIncident(updated);
 
-        if (!executeWrite(
-                "UPDATE INCIDENT SET "
-                "type = ?, "
-                "date_heure = TO_DATE(?, 'YYYY-MM-DD HH24:MI:SS'), "
-                "adresse = ?, "
-                "niveau_gravite = ?, "
-                "nb_victimes = ?, "
-                "description = ?, "
-                "statut = ? "
-                "WHERE id_incident = ? "
-                "AND statut <> 'Archivé'",
-                {
-                    updated.type,
-                    updated.date.toString("yyyy-MM-dd HH:mm:ss"),
-                    updated.address,
-                    updated.gravity,
-                    updated.victims,
-                    updated.description,
-                    updated.status,
-                    updated.id
-                },
-                "Modification impossible",
-                true
-                )) {
+        QString erreur;
+
+        if (!updated.modifier(erreur)) {
+            showDatabaseError("Modification impossible", erreur);
             return;
         }
 
-        *incident = updated;
-
-        clearForm();
-        refreshTable();
+        reloadAfterWrite("La modification");
     }
 
     void archiveIncident()
@@ -1693,23 +1510,14 @@ private:
         if (answer != QMessageBox::Yes)
             return;
 
-        if (!executeWrite(
-                "UPDATE INCIDENT "
-                "SET statut = 'Archivé' "
-                "WHERE id_incident = ? "
-                "AND statut <> 'Archivé'",
-                {incident->id},
-                "Archivage impossible",
-                true
-                )) {
+        QString erreur;
+
+        if (!Incident::archiver(incident->id, erreur)) {
+            showDatabaseError("Archivage impossible", erreur);
             return;
         }
 
-        incident->status = "Archivé";
-        incident->archived = true;
-
-        clearForm();
-        refreshTable();
+        reloadAfterWrite("L'archivage");
     }
 
     void deleteIncident()
@@ -1743,28 +1551,14 @@ private:
         if (answer != QMessageBox::Yes)
             return;
 
-        if (!executeWrite(
-                "DELETE FROM INCIDENT WHERE id_incident = ?",
-                {id},
-                "Suppression impossible",
-                true
-                )) {
+        QString erreur;
+
+        if (!Incident::supprimer(id, erreur)) {
+            showDatabaseError("Suppression impossible", erreur);
             return;
         }
 
-        incidents.erase(
-            std::remove_if(
-                incidents.begin(),
-                incidents.end(),
-                [&id](const Incident &entry) {
-                    return entry.id == id;
-                }
-                ),
-            incidents.end()
-            );
-
-        clearForm();
-        refreshTable();
+        reloadAfterWrite("La suppression");
     }
 
     std::vector<const Incident *> filteredIncidents() const

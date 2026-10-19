@@ -31,3 +31,5 @@ RESOURCES += \
     ressources.qrc \
     ../Incidents/images.qrc \
     ../Equipements/resources.qrc
+SOURCES += ../Incidents/incident.cpp
+HEADERS += ../Incidents/incident.h
