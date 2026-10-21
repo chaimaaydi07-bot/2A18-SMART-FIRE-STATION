@@ -15,6 +15,10 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Sql)
 set(PROJECT_SOURCES
     main.cpp
     images.qrc
+    formation.cpp
+    formation.h
+    connection.cpp
+    connection.h
 )
 
 if(QT_VERSION_MAJOR EQUAL 6)
