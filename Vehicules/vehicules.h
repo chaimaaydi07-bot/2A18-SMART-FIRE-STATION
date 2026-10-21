@@ -16,15 +16,20 @@ public:
     vehicules(QWidget *parent = nullptr);
     void setUtilisateur(const QString &nomUtilisateur, const QString &role);
 private slots:
-    void ajouter();
-    void modifier();
+    bool ajouter();
+    bool modifier();
     void rechercher();
     void trier();
 private:
+    void appliquerStyle();
+    bool chargerDepuisBase();
+    bool sauvegarder(bool modification);
+    bool supprimerVehicule(const QString &id);
     QString ajouterLigne(const QString &n, const QString &t, const QString &m,
                          const QString &mod, int q, int s, const QString &e,
                          const QString &loc, const QString &da, const QString &dm,
-                         const QString &pm, const QString &rem);
+                         const QString &pm, const QString &rem,
+                         const QString &id, const QString &km, const QString &disponibilite);
     void chargerFormulaire(int r);
     void colorierLignes();
     void afficherAlertes(bool afficherSiVide);
@@ -51,7 +56,7 @@ private:
     QComboBox *filtreType;
     QTableWidget *table;
     QVBoxLayout *alertesRecentesLayout = nullptr;
-    QWidget *donutEtat = nullptr;
-    int prochainId = 1;
+    QLineEdit *kilometrage;
+    QComboBox *disponibilite;
 };
 #endif 

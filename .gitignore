@@ -12,3 +12,35 @@ Makefile*
 moc_*.cpp
 ui_*.h
 qrc_*.cpp
+
+# CMake-generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+compile_commands.json
+.qmake.stash
+.qmake.cache
+
+# Compiler/debugger outputs and temporary editor files
+*.a
+*.pdb
+*.ilk
+*.log
+*.tmp
+*.bak
+*~
+
+# Local database schema exports (keep the versioned setup/migration scripts)
+/BaseDeDonnees/sauvegardes/
+
+# Local environment settings
+.env
+.env.*
+!.env.example
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

@@ -33,3 +33,5 @@ RESOURCES += \
     ../Equipements/resources.qrc
 SOURCES += ../Incidents/incident.cpp
 HEADERS += ../Incidents/incident.h
+SOURCES += ../Vehicules/vehiculerepository.cpp
+HEADERS += ../Vehicules/vehiculerepository.h

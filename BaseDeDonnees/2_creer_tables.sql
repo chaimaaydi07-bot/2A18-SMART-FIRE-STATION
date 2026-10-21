@@ -51,18 +51,39 @@ CREATE TABLE INTERVENTION (
 
 -- --------------------------- Module Gestion des véhicules -------------------
 CREATE TABLE VEHICULE (
-    id_vehicule             VARCHAR2(15)  CONSTRAINT pk_vehicule PRIMARY KEY,
-    type                    VARCHAR2(40)  NOT NULL,
-    immatriculation         VARCHAR2(20)  NOT NULL CONSTRAINT uq_vehicule_immat UNIQUE,
-    etat                    VARCHAR2(20)  NOT NULL,
-    kilometrage             NUMBER(8)     DEFAULT 0 CONSTRAINT ck_vehicule_km CHECK (kilometrage >= 0),
-    date_dernier_entretien  DATE,
-    disponibilite           VARCHAR2(20)  DEFAULT 'Disponible'
+    id                       NUMBER(10,0) CONSTRAINT pk_vehicule PRIMARY KEY,
+    matricule                VARCHAR2(20) NOT NULL CONSTRAINT uq_vehicule_immat UNIQUE,
+    type                     VARCHAR2(40) NOT NULL,
+    modele                   VARCHAR2(50),
+    marque                   VARCHAR2(50),
+    carburant                NUMBER(3,0) DEFAULT 0 NOT NULL CONSTRAINT ck_vehicule_carburant CHECK (carburant BETWEEN 0 AND 100),
+    seuil_carburant           NUMBER(3,0) DEFAULT 25 NOT NULL CONSTRAINT ck_vehicule_seuil CHECK (seuil_carburant BETWEEN 0 AND 100),
+    localisation             VARCHAR2(100),
+    date_achat               DATE,
+    date_prochaine_entretien DATE,
+    remarques                VARCHAR2(1000),
+    etat                     VARCHAR2(20) DEFAULT 'Disponible' NOT NULL,
+    disponibilite            VARCHAR2(20) DEFAULT 'Disponible' NOT NULL,
+    kilometrage              NUMBER(10,0) DEFAULT 0 NOT NULL
+        CONSTRAINT ck_vehicule_km CHECK (kilometrage >= 0),
+    date_derniere_entretien  DATE
 );
+
+-- Oracle 11g : generation automatique de l'identifiant (pas de colonne IDENTITY).
+CREATE SEQUENCE seq_vehicule_id START WITH 1 INCREMENT BY 1 NOCYCLE;
+
+CREATE OR REPLACE TRIGGER trg_vehicule_id
+BEFORE INSERT ON VEHICULE
+FOR EACH ROW
+WHEN (NEW.id IS NULL)
+BEGIN
+    :NEW.id := seq_vehicule_id.NEXTVAL;
+END;
+/
 
 -- Association MOBILISER (VEHICULE 0,n — 1,n INCIDENT)
 CREATE TABLE MOBILISATION (
-    id_vehicule   VARCHAR2(15)  CONSTRAINT fk_mobil_vehicule REFERENCES VEHICULE(id_vehicule) ON DELETE CASCADE,
+    id_vehicule   NUMBER(10,0)  CONSTRAINT fk_mobil_vehicule REFERENCES VEHICULE(id) ON DELETE CASCADE,
     id_incident   VARCHAR2(15)  CONSTRAINT fk_mobil_incident REFERENCES INCIDENT(id_incident) ON DELETE CASCADE,
     CONSTRAINT pk_mobilisation PRIMARY KEY (id_vehicule, id_incident)
 );
@@ -78,6 +99,6 @@ CREATE TABLE EQUIPEMENT (
     etat            VARCHAR2(20)  NOT NULL,
     date_achat      DATE,
     date_entretien  DATE,
-    id_vehicule     VARCHAR2(15)  -- véhicule dans lequel l'équipement est embarqué (EQUIPER)
-        CONSTRAINT fk_equip_vehicule REFERENCES VEHICULE(id_vehicule) ON DELETE SET NULL
+    id_vehicule     NUMBER(10,0)  -- véhicule dans lequel l'équipement est embarqué (EQUIPER)
+        CONSTRAINT fk_equip_vehicule REFERENCES VEHICULE(id) ON DELETE SET NULL
 );

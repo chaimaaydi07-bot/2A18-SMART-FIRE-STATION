@@ -1,4 +1,6 @@
 #include "vehicules.h"
+#include "vehiculerepository.h"
+#include <QRegularExpressionValidator>
 
 
 #include <QLabel>
@@ -188,7 +190,7 @@ class NumItem : public QTableWidgetItem {
 public:
     explicit NumItem(const QString &t) : QTableWidgetItem(t) {}
     bool operator<(const QTableWidgetItem &o) const override {
-        return text().toInt() < o.text().toInt();
+        return text().toLongLong() < o.text().toLongLong();
     }
 };
 // tri par date
@@ -584,7 +586,7 @@ static void ombre(QWidget *w)
     QGraphicsDropShadowEffect *e = new QGraphicsDropShadowEffect(w);
     e->setBlurRadius(18);
     e->setOffset(0, 2);
-    e->setColor(QColor(0, 0, 0, 35));
+    e->setColor(QColor(39, 5, 12, 18));
     w->setGraphicsEffect(e);
 }
 
@@ -721,29 +723,6 @@ static void fondu(QWidget *w)
     a->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
-// la ligne ajoutée / modifiée "flashe" en vert puis reprend sa couleur normale
-static void flashLigne(QTableWidget *table, int row, std::function<void()> fin)
-{
-    if (row < 0 || row >= table->rowCount()) return;
-    if (table->item(row, 1)) table->scrollToItem(table->item(row, 1));
-
-    QVariantAnimation *a = new QVariantAnimation(table);
-    a->setDuration(1500);
-    a->setStartValue(1.0);
-    a->setEndValue(0.0);
-    a->setEasingCurve(QEasingCurve::InQuad);
-    QObject::connect(a, &QVariantAnimation::valueChanged, table, [table, row](const QVariant &v) {
-        if (row >= table->rowCount()) return;
-        QColor c(46, 204, 113);
-        c.setAlphaF(0.08 + 0.55 * v.toDouble());
-        for (int col = 0; col < table->columnCount(); col++)
-            if (table->item(row, col))
-                table->item(row, col)->setBackground(QBrush(c));
-    });
-    QObject::connect(a, &QVariantAnimation::finished, table, [fin]() { fin(); });
-    a->start(QAbstractAnimation::DeleteWhenStopped);
-}
-
 // =====================================================================
 //  Page "Statistiques"
 // =====================================================================
@@ -792,20 +771,20 @@ static void afficherStatistiques(QWidget *parent, QTableWidget *table)
     dlg->setWindowTitle("Statistiques - Véhicules");
     dlg->resize(1120, 760);
     dlg->setStyleSheet(R"QSS(
-        QDialog{background:#F5F6F8;}
-        QScrollArea{background:#F5F6F8;border:none;}
-        QWidget#statInner{background:#F5F6F8;}
-        QFrame#statCard{background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;}
-        QLabel{border:none;background:transparent;color:#111827;}
-        QLabel#statTitle{font-size:26px;font-weight:700;color:#111827;}
-        QLabel#statSubtitle{font-size:13px;color:#6B7280;}
-        QLabel#cardTitle{font-size:15px;font-weight:600;color:#111827;}
-        QLabel#kpiValue{font-size:24px;font-weight:700;color:#111827;}
-        QLabel#kpiCaption{font-size:12px;color:#6B7280;}
-        QPushButton#pdfOutline{background:#FFFFFF;color:#C90000;border:1px solid #C90000;border-radius:8px;padding:8px 18px;font-weight:700;}
-        QPushButton#pdfOutline:hover{background:#FDE8E8;}
-        QPushButton#closePrimary{background:#C90000;color:#FFFFFF;border:1px solid #C90000;border-radius:8px;padding:8px 18px;font-weight:700;}
-        QPushButton#closePrimary:hover{background:#A80000;}
+        QDialog{background:#f4f2ef;}
+        QScrollArea{background:#f4f2ef;border:none;}
+        QWidget#statInner{background:#f4f2ef;}
+        QFrame#statCard{background:#FFFFFF;border:1px solid #e4e0da;border-radius:10px;}
+        QLabel{border:none;background:transparent;color:#302934;}
+        QLabel#statTitle{font-size:26px;font-weight:700;color:#302934;}
+        QLabel#statSubtitle{font-size:13px;color:#777984;}
+        QLabel#cardTitle{font-size:15px;font-weight:600;color:#302934;}
+        QLabel#kpiValue{font-size:24px;font-weight:700;color:#302934;}
+        QLabel#kpiCaption{font-size:12px;color:#777984;}
+        QPushButton#pdfOutline{background:#FFFFFF;color:#b51c2a;border:1px solid #b51c2a;border-radius:8px;padding:8px 18px;font-weight:700;}
+        QPushButton#pdfOutline:hover{background:#ffe5e7;}
+        QPushButton#closePrimary{background:#b51c2a;color:#FFFFFF;border:1px solid #b51c2a;border-radius:8px;padding:8px 18px;font-weight:700;}
+        QPushButton#closePrimary:hover{background:#8f1420;}
     )QSS");
 
     QVBoxLayout *root = new QVBoxLayout(dlg);
@@ -875,21 +854,21 @@ static void afficherStatistiques(QWidget *parent, QTableWidget *table)
 
     QHBoxLayout *kpis = new QHBoxLayout;
     kpis->setSpacing(14);
-    kpis->addWidget(kpi(QString::number(total), "Véhicules", "🚒", "#C90000", "#FDE8E8"), 1);
+    kpis->addWidget(kpi(QString::number(total), "Véhicules", "🚒", "#b51c2a", "#ffe5e7"), 1);
     kpis->addWidget(kpi(QString::number(tauxDispo, 'f', 1) + " %", "Taux de disponibilité", "✅", "#22A559", "#DCFCE7"), 1);
-    kpis->addWidget(kpi(QString::number(tauxHs, 'f', 1) + " %", "Taux hors service", "❌", "#6B7280", "#F3F4F6"), 1);
-    kpis->addWidget(kpi(QString::number(santeMoy) + " %", "Santé moyenne du parc", "❤️", "#C90000", "#FDE8E8"), 1);
-    kpis->addWidget(kpi(QString::number(enAlerte), "Véhicules en alerte", "🚨", "#C90000", "#FDE8E8"), 1);
+    kpis->addWidget(kpi(QString::number(tauxHs, 'f', 1) + " %", "Taux hors service", "❌", "#777984", "#fbf7f8"), 1);
+    kpis->addWidget(kpi(QString::number(santeMoy) + " %", "Santé moyenne du parc", "❤️", "#b51c2a", "#ffe5e7"), 1);
+    kpis->addWidget(kpi(QString::number(enAlerte), "Véhicules en alerte", "🚨", "#b51c2a", "#ffe5e7"), 1);
     iv->addLayout(kpis);
 
     DonutWidget *donut = new DonutWidget;
     donut->setData({"Disponible", "En mission", "En maintenance", "Hors service"},
                    {nbEtat[0], nbEtat[1], nbEtat[2], nbEtat[3]},
-                   {QColor("#22A559"), QColor("#6B7280"), QColor("#F59E0B"), QColor("#C90000")});
+                   {QColor("#22A559"), QColor("#777984"), QColor("#F59E0B"), QColor("#b51c2a")});
 
     BarsWidget *types = new BarsWidget;
     QVector<BarsWidget::Row> rowsType;
-    QStringList typePalette = {"#C90000", "#6B7280", "#B80000", "#9CA3AF", "#D1D5DB", "#F59E0B"};
+    QStringList typePalette = {"#b51c2a", "#777984", "#981a27", "#8b8490", "#dfe2e7", "#F59E0B"};
     int ci = 0;
     for (auto it = parType.constBegin(); it != parType.constEnd(); ++it, ++ci)
         rowsType.push_back({it.key(), it.value(), QColor(typePalette[ci % typePalette.size()])});
@@ -905,7 +884,7 @@ static void afficherStatistiques(QWidget *parent, QTableWidget *table)
     QVector<BarsWidget::Row> rowsSante;
     rowsSante.push_back({"Bon", nbSante[0], QColor("#22A559")});
     rowsSante.push_back({"À surveiller", nbSante[1], QColor("#F59E0B")});
-    rowsSante.push_back({"Critique", nbSante[2], QColor("#C90000")});
+    rowsSante.push_back({"Critique", nbSante[2], QColor("#b51c2a")});
     santeBars->setRows(rowsSante);
 
     QWidget *santeBox = new QWidget;
@@ -915,7 +894,7 @@ static void afficherStatistiques(QWidget *parent, QTableWidget *table)
     sbx->addWidget(santeBars);
     QLabel *santeNote = new QLabel("Score calculé automatiquement : cycle de maintenance, âge et état du véhicule.");
     santeNote->setWordWrap(true);
-    santeNote->setStyleSheet("color:#6B7280;font-size:11px;");
+    santeNote->setStyleSheet("color:#777984;font-size:11px;");
     sbx->addWidget(santeNote);
 
     QHBoxLayout *row2 = new QHBoxLayout;
@@ -928,7 +907,7 @@ static void afficherStatistiques(QWidget *parent, QTableWidget *table)
     root->addWidget(scroll, 1);
 
     QFrame *foot = new QFrame;
-    foot->setStyleSheet("QFrame{background:#FFFFFF;border-top:1px solid #E5E7EB;}");
+    foot->setStyleSheet("QFrame{background:#FFFFFF;border-top:1px solid #e4e0da;}");
     QHBoxLayout *fl = new QHBoxLayout(foot);
     fl->setContentsMargins(24, 12, 24, 12);
     fl->addStretch();
@@ -951,7 +930,7 @@ static void afficherStatistiques(QWidget *parent, QTableWidget *table)
 
         QPainter painter(&printer);
         QRectF page = printer.pageRect(QPrinter::DevicePixel);
-        painter.setPen(QColor("#C90000"));
+        painter.setPen(QColor("#b51c2a"));
         QFont f = painter.font();
         f.setPointSize(16);
         f.setBold(true);
@@ -984,6 +963,84 @@ static void afficherStatistiques(QWidget *parent, QTableWidget *table)
     dlg->exec();
 }
 
+// Theme commun aux pages Personnel et Equipements.
+void vehicules::appliquerStyle()
+{
+    setStyleSheet(R"QSS(
+        QWidget {font-family:'Segoe UI', Arial, sans-serif;font-size:13px;color:#302934;}
+        QLabel {background:transparent;border:none;}
+        QWidget#vehicleNotifications{background:transparent;}
+        QFrame#vehicleWarning{background:#fff5f4;border:2px solid #f2c7c2;border-radius:14px;}
+        QFrame#vehicleInfo{background:#f3f8fd;border:2px solid #c9dcf2;border-radius:14px;}
+        QLabel#notificationTitle{color:#b51c2a;font-weight:700;font-size:14px;}
+        QFrame#vehicleInfo QLabel#notificationTitle{color:#1f4f8a;}
+        QLabel#notificationDetail{color:#777984;font-size:12px;}
+        QPushButton#notificationAction{color:white;background:#b51c2a;border:2px solid #8f1420;border-radius:10px;padding:8px 14px;font-weight:700;}
+        QPushButton#notificationAction:hover{background:#cf2635;}
+        QFrame#vehicleInfo QPushButton#notificationAction{color:#1f4f8a;background:white;border:2px solid #9dbde3;}
+        QFrame#vehicleInfo QPushButton#notificationAction:hover{background:#e8f1fb;}
+        QToolTip{background:#302934;color:white;border:none;padding:6px 10px;border-radius:6px;}
+        QMainWindow, QWidget#pageBg{background:#f4f2ef;}
+        QScrollArea{background:#f4f2ef;border:none;}
+        QFrame#dashCard{background:#FFFFFF;border:1px solid #e4e0da;border-radius:10px;}
+        QLabel#pageTitle{font-size:26px;font-weight:700;color:#302934;}
+        QLabel#pageSubtitle{font-size:13px;color:#777984;}
+        QLabel#cardTitle{font-size:15px;font-weight:600;color:#302934;}
+        QLabel#muted{font-size:12px;color:#777984;}
+        QLabel#kpiValue{font-size:26px;font-weight:700;color:#302934;}
+        QLabel#kpiLabel{font-size:12px;color:#777984;}
+        QPushButton#primaryButton{background:#b51c2a;color:white;border:2px solid #8f1420;border-radius:9px;padding:0 18px;font-weight:700;min-height:40px;}
+        QPushButton#primaryButton:hover{background:#cf2635;}
+        QPushButton#secondaryButton{background:#FFFFFF;color:#981a27;border:2px solid #c94d59;border-radius:8px;padding:0 12px;min-height:36px;}
+        QPushButton#secondaryButton:hover{background:#fff1f2;border-color:#dfe2e7;}
+        QPushButton#statsButton{background:#FFFFFF;color:#981a27;border:1px solid #e8b4b1;border-radius:8px;padding:0 14px;min-height:34px;font-weight:600;}
+        QPushButton#statsButton:hover{background:#fff1f2;border-color:#dfe2e7;}
+        QPushButton#dangerIcon{background:#ffe5e7;color:#981a27;border:1px solid #efc9cd;border-radius:7px;min-width:28px;min-height:28px;max-width:28px;max-height:28px;}
+        QPushButton#rowIcon{background:#fff1f2;color:#302934;border:1px solid #e4e0da;border-radius:7px;min-width:28px;min-height:28px;max-width:28px;max-height:28px;}
+        QPushButton#rowIcon:hover{background:#fbf7f8;}
+        QLineEdit,QComboBox,QSpinBox,QDateEdit,QTextEdit{background:#fbfbfc;border:2px solid #dfe2e7;border-radius:9px;padding:7px 10px;min-height:22px;}
+        QLineEdit:focus,QComboBox:focus,QSpinBox:focus,QDateEdit:focus,QTextEdit:focus{border:2px solid #bd1e2c;background:white;}
+        QLineEdit[erreur="true"],QComboBox[erreur="true"]{border:1px solid #b51c2a;background:#FFF5F5;}
+        QComboBox::drop-down,QDateEdit::drop-down{border:none;width:24px;}
+        QLineEdit#searchInput{background:#FFFFFF;color:#302934;border:1px solid #e4e0da;border-radius:8px;padding:8px 12px;min-height:22px;}
+        QLineEdit#searchInput:hover{border:1px solid #dfe2e7;}
+        QLineEdit#searchInput:focus{border:1px solid #b51c2a;}
+        QComboBox#toolbarCombo{background:#FFFFFF;color:#302934;border:1px solid #e4e0da;border-radius:8px;padding:8px 12px;min-height:22px;}
+        QComboBox#toolbarCombo:hover{border:1px solid #dfe2e7;}
+        QComboBox#toolbarCombo:focus{border:1px solid #b51c2a;}
+        QComboBox#toolbarCombo::drop-down{border:none;width:26px;}
+        QComboBox#toolbarCombo::down-arrow{image:none;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #302934;width:0;height:0;margin-right:10px;}
+        QComboBox#toolbarCombo QAbstractItemView{background:#FFFFFF;color:#302934;border:1px solid #e4e0da;selection-background-color:#ffe5e7;selection-color:#981a27;outline:0;}
+        QTableWidget{background:white;border:none;alternate-background-color:#fbf7f8;selection-background-color:#ffe5e7;selection-color:#302934;gridline-color:#eceef1;}
+        QHeaderView{background:#5b1722;border:none;}
+        QHeaderView::section{background:#5b1722;color:white;font-size:11px;font-weight:700;border:none;border-right:1px solid #762834;padding:12px 5px;}
+        QTableWidget::item{border-bottom:1px solid #fbf7f8;padding:4px;}
+        QMenu{background:white;border:1px solid #e4e0da;padding:6px;}
+        QMenu::item{padding:7px 28px;color:#302934;}
+        QMenu::item:selected{background:#ffe5e7;color:#981a27;}
+        QStatusBar{background:#FFFFFF;color:#777984;border-top:1px solid #e4e0da;}
+        QScrollBar:vertical{background:transparent;width:10px;margin:2px;}
+        QScrollBar::handle:vertical{background:#d9bcbc;border-radius:4px;min-height:30px;}
+        QScrollBar::handle:vertical:hover{background:#b51c2a;}
+        QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;}
+        QScrollBar:horizontal{background:transparent;height:10px;margin:2px;}
+        QScrollBar::handle:horizontal{background:#d9bcbc;border-radius:4px;min-width:30px;}
+        QScrollBar::handle:horizontal:hover{background:#b51c2a;}
+        QScrollBar::add-line:horizontal,QScrollBar::sub-line:horizontal{width:0;}
+        QPushButton:disabled{color:#aaa;background:#f1efec;border-color:#e4e0da;}
+        QPushButton#primaryButton:disabled{background:#e3a9af;border-color:#d9959c;color:white;}
+        QComboBox QAbstractItemView{background:white;color:#302934;border:1px solid #e4e0da;selection-background-color:#ffe5e7;selection-color:#64131d;outline:0;}
+        QCalendarWidget QWidget{background:white;color:#302934;}
+        QCalendarWidget QWidget#qt_calendar_navigationbar{background:#5b1722;}
+        QCalendarWidget QToolButton{background:transparent;color:white;border:none;padding:4px 8px;}
+        QCalendarWidget QAbstractItemView:enabled{selection-background-color:#b51c2a;selection-color:white;}
+        QMessageBox{background:#f4f2ef;}
+        QMessageBox QPushButton{background:#b51c2a;color:white;border:1px solid #8f1420;border-radius:9px;padding:8px 18px;min-width:70px;font-weight:700;}
+        QMessageBox QPushButton:hover{background:#cf2635;}
+        QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical,QScrollBar::add-page:horizontal,QScrollBar::sub-page:horizontal{background:transparent;}
+    )QSS");
+}
+
 vehicules::vehicules(QWidget *parent)
     : QMainWindow(parent)
 {
@@ -993,56 +1050,7 @@ vehicules::vehicules(QWidget *parent)
     statusBar()->setSizeGripEnabled(false);
     statusBar()->hide();
 
-    setStyleSheet(R"QSS(
-        QWidget {font-family:'Segoe UI', Arial, sans-serif;color:#111827;}
-        QToolTip{background:#111827;color:white;border:none;padding:6px 10px;border-radius:6px;}
-        QMainWindow, QWidget#pageBg{background:#F5F6F8;}
-        QScrollArea{background:#F5F6F8;border:none;}
-        QFrame#dashCard{background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;}
-        QLabel#pageTitle{font-size:26px;font-weight:700;color:#111827;}
-        QLabel#pageSubtitle{font-size:13px;color:#6B7280;}
-        QLabel#cardTitle{font-size:15px;font-weight:600;color:#111827;}
-        QLabel#muted{font-size:12px;color:#6B7280;}
-        QLabel#kpiValue{font-size:26px;font-weight:700;color:#111827;}
-        QLabel#kpiLabel{font-size:12px;color:#6B7280;}
-        QPushButton#primaryButton{background:#C90000;color:white;border:none;border-radius:9px;padding:0 18px;font-weight:700;min-height:40px;}
-        QPushButton#primaryButton:hover{background:#B80000;}
-        QPushButton#secondaryButton{background:#FFFFFF;color:#374151;border:1px solid #E5E7EB;border-radius:8px;padding:0 12px;min-height:36px;}
-        QPushButton#secondaryButton:hover{background:#F9FAFB;border-color:#D1D5DB;}
-        QPushButton#statsButton{background:#FFFFFF;color:#374151;border:1px solid #E5E7EB;border-radius:8px;padding:0 14px;min-height:34px;font-weight:600;}
-        QPushButton#statsButton:hover{background:#F9FAFB;border-color:#D1D5DB;}
-        QPushButton#dangerIcon{background:#FDE8E8;color:#B80000;border:1px solid #F8CACA;border-radius:7px;min-width:28px;min-height:28px;max-width:28px;max-height:28px;}
-        QPushButton#rowIcon{background:#F9FAFB;color:#374151;border:1px solid #E5E7EB;border-radius:7px;min-width:28px;min-height:28px;max-width:28px;max-height:28px;}
-        QPushButton#rowIcon:hover{background:#F3F4F6;}
-        QLineEdit,QComboBox,QSpinBox,QDateEdit,QTextEdit{background:white;border:1px solid #D1D5DB;border-radius:8px;padding:7px 10px;min-height:22px;}
-        QLineEdit:focus,QComboBox:focus,QSpinBox:focus,QDateEdit:focus,QTextEdit:focus{border:1px solid #C90000;}
-        QLineEdit[erreur="true"],QComboBox[erreur="true"]{border:1px solid #C90000;background:#FFF5F5;}
-        QComboBox::drop-down,QDateEdit::drop-down{border:none;width:24px;}
-        QLineEdit#searchInput{background:#FFFFFF;color:#374151;border:1px solid #E5E7EB;border-radius:8px;padding:8px 12px;min-height:22px;}
-        QLineEdit#searchInput:hover{border:1px solid #D1D5DB;}
-        QLineEdit#searchInput:focus{border:1px solid #C90000;}
-        QComboBox#toolbarCombo{background:#FFFFFF;color:#374151;border:1px solid #E5E7EB;border-radius:8px;padding:8px 12px;min-height:22px;}
-        QComboBox#toolbarCombo:hover{border:1px solid #D1D5DB;}
-        QComboBox#toolbarCombo:focus{border:1px solid #C90000;}
-        QComboBox#toolbarCombo::drop-down{border:none;width:26px;}
-        QComboBox#toolbarCombo::down-arrow{image:none;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #374151;width:0;height:0;margin-right:10px;}
-        QComboBox#toolbarCombo QAbstractItemView{background:#FFFFFF;color:#374151;border:1px solid #E5E7EB;selection-background-color:#FDE8E8;selection-color:#B80000;outline:0;}
-        QTableWidget{background:white;border:none;alternate-background-color:#FFFFFF;selection-background-color:#FDE8E8;selection-color:#111827;gridline-color:#EEF0F3;}
-        QHeaderView::section{background:#F3F4F6;color:#4B5563;font-size:12px;font-weight:600;border:none;border-bottom:1px solid #E5E7EB;padding:8px 6px;}
-        QTableWidget::item{border-bottom:1px solid #F3F4F6;padding:4px;}
-        QMenu{background:white;border:1px solid #E5E7EB;padding:6px;}
-        QMenu::item{padding:7px 28px;color:#111827;}
-        QMenu::item:selected{background:#FDE8E8;color:#B80000;}
-        QStatusBar{background:#FFFFFF;color:#6B7280;border-top:1px solid #E5E7EB;}
-        QScrollBar:vertical{background:transparent;width:10px;margin:2px;}
-        QScrollBar::handle:vertical{background:#D1D5DB;border-radius:4px;min-height:30px;}
-        QScrollBar::handle:vertical:hover{background:#C90000;}
-        QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;}
-        QScrollBar:horizontal{background:transparent;height:10px;margin:2px;}
-        QScrollBar::handle:horizontal{background:#D1D5DB;border-radius:4px;min-width:30px;}
-        QScrollBar::handle:horizontal:hover{background:#C90000;}
-        QScrollBar::add-line:horizontal,QScrollBar::sub-line:horizontal{width:0;}
-    )QSS");
+    appliquerStyle();
 
     auto card = []() {
         QFrame *f = new QFrame;
@@ -1054,14 +1062,6 @@ vehicules::vehicules(QWidget *parent)
     auto titleLabel = [](const QString &text) {
         QLabel *l = new QLabel(text);
         l->setObjectName("cardTitle");
-        return l;
-    };
-
-    auto makeIcon = [](const QString &text, const QString &fg, const QString &bg) {
-        QLabel *l = new QLabel(text);
-        l->setAlignment(Qt::AlignCenter);
-        l->setFixedSize(42, 42);
-        l->setStyleSheet(QString("background:%1;color:%2;border-radius:21px;font-family:'Segoe UI Emoji';font-size:24px;font-weight:400;").arg(bg, fg));
         return l;
     };
 
@@ -1077,16 +1077,20 @@ vehicules::vehicules(QWidget *parent)
     content->setObjectName("pageBg");
     QVBoxLayout *contentLayout = new QVBoxLayout(content);
     contentLayout->setContentsMargins(24, 22, 24, 24);
-    contentLayout->setSpacing(14);
+    contentLayout->setSpacing(18);
     scroll->setWidget(content);
     root->addWidget(scroll);
 
     // Champs conservés pour réutiliser la logique métier existante depuis les dialogues.
     nom = new QLineEdit(this);
+    nom->setObjectName("vehicleMatricule");
+    nom->setMaxLength(20);
     type = new QComboBox(this);
+    type->setObjectName("vehicleType");
     type->addItems({"Sélectionner un type", "Incendie", "Ambulance", "Commandement", "Secours médical", "Intervention technique"});
     marque = new QLineEdit(this);
     modele = new QLineEdit(this);
+    modele->setObjectName("vehicleModele");
     quantite = new QSpinBox(this);
     quantite->setRange(0, 100);
     quantite->setSuffix(" %");
@@ -1112,14 +1116,22 @@ vehicules::vehicules(QWidget *parent)
         prochaineMaintenance->setMinimumDate(d.addDays(1));
     });
     remarques = new QLineEdit(this);
+    kilometrage = new QLineEdit("0", this);
+    kilometrage->setObjectName("vehicleKilometrage");
+    kilometrage->setValidator(new QRegularExpressionValidator(QRegularExpression("[0-9]{1,10}"), kilometrage));
+    disponibilite = new QComboBox(this);
+    disponibilite->setObjectName("vehicleDisponibilite");
+    disponibilite->addItems({"Disponible", "Indisponible"});
     for (QWidget *w : QVector<QWidget *>{nom, type, marque, modele, quantite, seuil, etat, localisation,
-                                         dateAchat, dateMaintenance, prochaineMaintenance, remarques})
+                                         dateAchat, dateMaintenance, prochaineMaintenance, remarques, kilometrage, disponibilite})
         w->hide();
 
     QHBoxLayout *header = new QHBoxLayout;
     header->setSpacing(12);
     QVBoxLayout *headerText = new QVBoxLayout;
     headerText->setSpacing(2);
+    QLabel *breadcrumb = new QLabel("<span style='color:#777'>Caserne&nbsp;&nbsp;›&nbsp;&nbsp;</span><b style='color:#981a27'>Véhicules</b>");
+    headerText->addWidget(breadcrumb);
     QLabel *title = new QLabel("Gestion des véhicules");
     title->setObjectName("pageTitle");
     QLabel *subtitle = new QLabel("Vue d'ensemble de votre parc de véhicules");
@@ -1131,37 +1143,15 @@ vehicules::vehicules(QWidget *parent)
     maintenanceAction->setObjectName("secondaryButton");
     QPushButton *addAction = new QPushButton("+ Ajouter un véhicule");
     addAction->setObjectName("primaryButton");
+    QPushButton *statsButton = new QPushButton("Statistiques");
+    statsButton->setObjectName("statsButton");
+    statsButton->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    statsButton->setMinimumHeight(40);
+    statsButton->setCursor(Qt::PointingHandCursor);
+    header->addWidget(statsButton, 0, Qt::AlignTop);
     header->addWidget(maintenanceAction, 0, Qt::AlignTop);
     header->addWidget(addAction, 0, Qt::AlignTop);
     contentLayout->addLayout(header);
-
-    QHBoxLayout *kpis = new QHBoxLayout;
-    kpis->setSpacing(14);
-    auto kpi = [&](const QString &name, const QString &icon, const QString &fg, const QString &bg, const QString &label) {
-        QFrame *f = card();
-        f->setMinimumHeight(104);
-        QHBoxLayout *l = new QHBoxLayout(f);
-        l->setContentsMargins(18, 14, 18, 14);
-        l->setSpacing(14);
-        l->addWidget(makeIcon(icon, fg, bg));
-        QVBoxLayout *texts = new QVBoxLayout;
-        texts->setSpacing(0);
-        QLabel *v = new QLabel("0");
-        v->setObjectName(name);
-        v->setProperty("role", "kpi");
-        v->setStyleSheet("font-size:26px;font-weight:700;color:#111827;");
-        QLabel *cap = new QLabel(label);
-        cap->setObjectName("kpiLabel");
-        texts->addWidget(v);
-        texts->addWidget(cap);
-        l->addLayout(texts, 1);
-        kpis->addWidget(f, 1);
-    };
-    kpi("val_total", "🚒", "#C90000", "#FDE8E8", "Véhicules total");
-    kpi("val_dispo", "✅", "#22A559", "#DCFCE7", "Disponibles");
-    kpi("val_maintenance", "🔧", "#C90000", "#FDE8E8", "En maintenance");
-    kpi("val_hs", "❌", "#6B7280", "#F3F4F6", "Hors service");
-    contentLayout->addLayout(kpis);
 
     QFrame *tableCard = card();
     tableCard->setMinimumHeight(360);
@@ -1197,13 +1187,14 @@ vehicules::vehicules(QWidget *parent)
     QAction *actAlerts = new QAction("Alertes", this);
     QAction *actMaint = new QAction("Maintenance prédictive", this);
 
-    table = new QTableWidget(0, 16);
+    table = new QTableWidget(0, 18);
+    table->setObjectName("vehiclesTable");
     table->setHorizontalHeaderLabels({
         "ID", "Matricule", "Type", "Carburant", "Carburant min.", "État", "Localisation",
         "Date achat", "Dernière maintenance", "Prochaine maintenance", "Actions",
-        "Marque", "Modèle", "Remarques", "Santé", ""
+        "Marque", "Modèle", "Remarques", "Santé", "", "Kilométrage", "Disponibilité"
     });
-    table->setAlternatingRowColors(false);
+    table->setAlternatingRowColors(true);
     table->setShowGrid(false);
     table->verticalHeader()->setVisible(false);
     table->verticalHeader()->setDefaultSectionSize(44);
@@ -1258,68 +1249,31 @@ vehicules::vehicules(QWidget *parent)
     table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Interactive);
     table->horizontalHeader()->setSectionResizeMode(10, QHeaderView::Interactive);
     table->horizontalHeader()->setSectionResizeMode(12, QHeaderView::Stretch);
+    table->setColumnWidth(16, 110);
+    table->setColumnWidth(17, 130);
     tableLayout->addWidget(table, 1);
     contentLayout->addWidget(tableCard, 1);
 
-    QHBoxLayout *bottom = new QHBoxLayout;
-    bottom->setSpacing(14);
-    QFrame *donutCard = card();
-    donutCard->setMinimumHeight(260);
-    QVBoxLayout *dl = new QVBoxLayout(donutCard);
-    dl->setContentsMargins(18, 16, 18, 16);
-    dl->setSpacing(8);
-    QHBoxLayout *donutHead = new QHBoxLayout;
-    donutHead->addWidget(titleLabel("Répartition par état"));
-    donutHead->addStretch();
-    QPushButton *statsButton = new QPushButton("Statistiques");
-    statsButton->setObjectName("statsButton");
-    statsButton->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
-    donutHead->addWidget(statsButton);
-    dl->addLayout(donutHead);
-    donutEtat = new DonutWidget;
-    dl->addWidget(donutEtat, 1);
-    bottom->addWidget(donutCard, 1);
-
-    QFrame *alertsCard = card();
-    QVBoxLayout *al = new QVBoxLayout(alertsCard);
-    al->setContentsMargins(18, 16, 18, 16);
-    al->setSpacing(10);
-    QHBoxLayout *alertHead = new QHBoxLayout;
-    alertHead->addWidget(titleLabel("Alertes récentes"));
-    alertHead->addStretch();
-    QPushButton *viewAllAlerts = new QPushButton("Voir toutes");
-    viewAllAlerts->setObjectName("secondaryButton");
-    alertHead->addWidget(viewAllAlerts);
-    al->addLayout(alertHead);
-    QWidget *alertsInner = new QWidget;
-    alertesRecentesLayout = new QVBoxLayout(alertsInner);
+    // Notifications individuelles, comme sur la page Personnel.
+    QWidget *notifications = new QWidget;
+    notifications->setObjectName("vehicleNotifications");
+    QVBoxLayout *notificationsLayout = new QVBoxLayout(notifications);
+    notificationsLayout->setContentsMargins(0, 0, 0, 0);
+    notificationsLayout->setSpacing(8);
+    alertesRecentesLayout = new QVBoxLayout;
     alertesRecentesLayout->setContentsMargins(0, 0, 0, 0);
     alertesRecentesLayout->setSpacing(8);
-    al->addWidget(alertsInner, 1);
-    bottom->addWidget(alertsCard, 1);
-    contentLayout->addLayout(bottom);
-
-    QStringList noms = {"VSAV-01", "FPT-02", "CCF-03", "VLCG-04", "VTU-05", "EPA-06", "VSR-07", "VPC-08"};
-    QStringList marques = {"Renault Trucks", "Mercedes-Benz", "Iveco", "Peugeot", "Ford", "MAN", "Scania", "Citroën"};
-    QStringList typesDemo = {"Secours médical", "Incendie", "Incendie", "Commandement", "Intervention technique", "Incendie", "Intervention technique", "Commandement"};
-    QStringList modeles = {"Master", "Atego", "Daily 4x4", "Expert", "Transit", "TGM", "P320", "Jumpy"};
-    QStringList etats = {"Disponible", "En maintenance", "Hors service", "Disponible", "En mission", "Disponible", "En maintenance", "En mission"};
-    QStringList lieux = {"Remise principale", "Aire de stationnement", "Zone départ rapide", "Aire de stationnement", "Magasin", "Aire de stationnement", "Remise principale", "Atelier mécanique"};
-    int carburants[8] = {85, 60, 15, 90, 25, 75, 45, 55};
-    int seuils[8] = {30, 25, 30, 20, 25, 25, 30, 25};
-    QDate today = QDate::currentDate();
-    for (int i = 0; i < noms.size(); i++) {
-        QDate pm = today.addMonths(6);
-        if (i == 2) pm = today.addDays(10);
-        if (i == 4) pm = today.addDays(-5);
-        ajouterLigne(noms[i], typesDemo[i], marques[i], modeles[i], carburants[i], seuils[i], etats[i], lieux[i],
-                     today.addYears(-1).toString(FMT), today.addMonths(-6).toString(FMT), pm.toString(FMT), "");
-    }
+    notificationsLayout->addLayout(alertesRecentesLayout);
+    QPushButton *viewAllAlerts = new QPushButton("Voir toutes les alertes ›");
+    viewAllAlerts->setObjectName("statsButton");
+    viewAllAlerts->setCursor(Qt::PointingHandCursor);
+    notificationsLayout->addWidget(viewAllAlerts, 0, Qt::AlignRight);
+    contentLayout->addWidget(notifications);
 
     QLabel *vide = new QLabel(table->viewport());
     vide->setObjectName("labelVide");
     vide->setAlignment(Qt::AlignCenter);
-    vide->setStyleSheet("color:#9CA3AF;font-size:14px;");
+    vide->setStyleSheet("color:#8b8490;font-size:14px;");
     vide->hide();
     QVBoxLayout *vl = new QVBoxLayout(table->viewport());
     vl->addWidget(vide, 0, Qt::AlignCenter);
@@ -1345,8 +1299,8 @@ vehicules::vehicules(QWidget *parent)
     connect(actPdf, &QAction::triggered, this, [=]() {
         QString file = QFileDialog::getSaveFileName(this, "Exporter en PDF", QDir::homePath() + "/Documents/vehicules.pdf", "PDF (*.pdf)");
         if (file.isEmpty()) return;
-        QString html = "<h2 style='color:#c40000'>Inventaire des véhicules</h2><table border='1' cellspacing='0' cellpadding='4'><tr>";
-        const QVector<int> exportCols = {0, 1, 11, 12, 2, 3, 5, 8, 9};
+        QString html = "<h2 style='color:#b51c2a'>Inventaire des véhicules</h2><table border='1' cellspacing='0' cellpadding='4'><tr>";
+        const QVector<int> exportCols = {0, 1, 11, 12, 2, 3, 5, 16, 17, 8, 9};
         for (int c : exportCols) html += "<th>" + table->horizontalHeaderItem(c)->text() + "</th>";
         html += "</tr>";
         for (int r = 0; r < table->rowCount(); r++) {
@@ -1364,14 +1318,7 @@ vehicules::vehicules(QWidget *parent)
         doc.print(&printer);
         QMessageBox::information(this, "PDF", "Export réussi !");
     });
-    connect(table->model(), &QAbstractItemModel::rowsRemoved, this, [=]() {
-        QTimer::singleShot(0, this, [this]() { majCartes(); });
-    });
-    connect(table->model(), &QAbstractItemModel::rowsInserted, this, [=]() {
-        QTimer::singleShot(0, this, [this]() { majCartes(); });
-    });
-
-    colorierLignes();
+    chargerDepuisBase();
     apparition(tableCard, 250);
     diapo(tableCard, QPoint(0, 30), 250);
 }
@@ -1387,22 +1334,22 @@ void vehicules::ouvrirFormulaireVehicule(bool edition, int ligne)
 
     QDialog dlg(this);
     dlg.setWindowTitle(edition ? "Modifier le véhicule" : "Nouveau véhicule");
-    dlg.resize(760, 620);
+    dlg.resize(760, 740);
     dlg.setStyleSheet(
-        "QDialog{background:#F5F6F8;}"
-        "QLabel#dialogTitle{font-size:22px;font-weight:700;color:#111827;}"
-        "QLabel#fieldLabel{color:#374151;font-weight:600;font-size:12px;}"
-        "QFrame#formSection{background:white;border:1px solid #E5E7EB;border-radius:12px;}"
-        "QPushButton#dialogPrimary{background:#C90000;color:white;border:none;border-radius:8px;"
+        "QDialog{background:#f4f2ef;}"
+        "QLabel#dialogTitle{font-size:22px;font-weight:800;color:#981a27;}"
+        "QLabel#fieldLabel{color:#302934;font-weight:700;font-size:12px;}"
+        "QFrame#formSection{background:white;border:1px solid #e4e0da;border-radius:10px;}"
+        "QPushButton#dialogPrimary{background:#b51c2a;color:white;border:2px solid #8f1420;border-radius:8px;"
         "padding:9px 18px;font-weight:700;}"
-        "QPushButton#dialogPrimary:hover{background:#B80000;}"
-        "QPushButton#dialogCancel{background:white;color:#374151;border:1px solid #D1D5DB;border-radius:8px;"
+        "QPushButton#dialogPrimary:hover{background:#cf2635;}"
+        "QPushButton#dialogCancel{background:white;color:#981a27;border:2px solid #c94d59;border-radius:8px;"
         "padding:9px 18px;}"
-        "QPushButton#dialogCancel:hover{background:#F9FAFB;}"
-        "QLineEdit,QComboBox,QSpinBox,QDateEdit,QTextEdit{background:white;border:1px solid #D1D5DB;"
+        "QPushButton#dialogCancel:hover{background:#fff1f2;}"
+        "QLineEdit,QComboBox,QSpinBox,QDateEdit,QTextEdit{background:#fbfbfc;border:2px solid #dfe2e7;"
         "border-radius:8px;padding:7px 10px;min-height:24px;}"
-        "QLineEdit:focus,QComboBox:focus,QSpinBox:focus,QDateEdit:focus,QTextEdit:focus{border:1px solid #C90000;}"
-        "QLineEdit[erreur=\"true\"],QComboBox[erreur=\"true\"]{border:1px solid #C90000;background:#FFF5F5;}");
+        "QLineEdit:focus,QComboBox:focus,QSpinBox:focus,QDateEdit:focus,QTextEdit:focus{border:2px solid #bd1e2c;background:white;}"
+        "QLineEdit[erreur=\"true\"],QComboBox[erreur=\"true\"]{border:1px solid #b51c2a;background:#FFF5F5;}");
 
     QVBoxLayout *root = new QVBoxLayout(&dlg);
     root->setContentsMargins(20, 18, 20, 18);
@@ -1432,11 +1379,14 @@ void vehicules::ouvrirFormulaireVehicule(bool edition, int ligne)
 
     QLineEdit *dlgNom = new QLineEdit;
     dlgNom->setPlaceholderText("Ex : VSAV-01");
+    dlgNom->setMaxLength(20);
     QComboBox *dlgType = new QComboBox;
     dlgType->addItems({"Sélectionner un type", "Incendie", "Ambulance", "Commandement",
                        "Secours médical", "Intervention technique"});
     QLineEdit *dlgMarque = new QLineEdit;
     QLineEdit *dlgModele = new QLineEdit;
+    dlgModele->setMaxLength(50);
+    dlgMarque->setMaxLength(50);
     QSpinBox *dlgCarburant = new QSpinBox;
     dlgCarburant->setRange(0, 100);
     dlgCarburant->setSuffix(" %");
@@ -1448,6 +1398,11 @@ void vehicules::ouvrirFormulaireVehicule(bool edition, int ligne)
     QComboBox *dlgEtat = new QComboBox;
     dlgEtat->addItems({"Disponible", "En mission", "En maintenance", "Hors service"});
     QLineEdit *dlgLocalisation = new QLineEdit;
+    dlgLocalisation->setMaxLength(100);
+    QLineEdit *dlgKilometrage = new QLineEdit("0");
+    dlgKilometrage->setValidator(new QRegularExpressionValidator(QRegularExpression("[0-9]{1,10}"), dlgKilometrage));
+    QComboBox *dlgDisponibilite = new QComboBox;
+    dlgDisponibilite->addItems({"Disponible", "Indisponible"});
     QDateEdit *dlgAchat = new QDateEdit(QDate::currentDate());
     dlgAchat->setCalendarPopup(true);
     dlgAchat->setDisplayFormat(FMT);
@@ -1464,19 +1419,31 @@ void vehicules::ouvrirFormulaireVehicule(bool edition, int ligne)
         dlgProchaine->setMinimumDate(d.addDays(1));
     });
 
+    const QDate dateVide(1900, 1, 1);
+    for (auto *date : {dlgAchat, dlgDerniere, dlgProchaine}) {
+        date->setMinimumDate(dateVide);
+        date->setSpecialValueText("Non renseignée");
+    }
     if (edition) {
         dlgNom->setText(table->item(ligne, 1)->text());
+        if (dlgType->findText(table->item(ligne, 2)->text()) < 0) dlgType->addItem(table->item(ligne, 2)->text());
         dlgType->setCurrentText(table->item(ligne, 2)->text());
         dlgCarburant->setValue(table->item(ligne, 3)->text().toInt());
         dlgSeuil->setValue(table->item(ligne, 4)->text().toInt());
+        if (dlgEtat->findText(table->item(ligne, 5)->text()) < 0) dlgEtat->addItem(table->item(ligne, 5)->text());
         dlgEtat->setCurrentText(table->item(ligne, 5)->text());
         dlgLocalisation->setText(table->item(ligne, 6)->text());
         QDate d1 = QDate::fromString(table->item(ligne, 7)->text(), FMT);
         QDate d2 = QDate::fromString(table->item(ligne, 8)->text(), FMT);
         QDate d3 = QDate::fromString(table->item(ligne, 9)->text(), FMT);
-        if (d1.isValid()) dlgAchat->setDate(d1);
-        if (d2.isValid()) dlgDerniere->setDate(d2);
-        if (d3.isValid()) dlgProchaine->setDate(d3);
+        dlgAchat->setDate(d1.isValid() ? d1 : dateVide);
+        dlgDerniere->setDate(d2.isValid() ? d2 : dateVide);
+        dlgProchaine->setMinimumDate(dateVide);
+        dlgProchaine->setDate(d3.isValid() ? d3 : dateVide);
+        dlgKilometrage->setText(table->item(ligne, 16)->text());
+        const QString dispo = table->item(ligne, 17)->text();
+        if (dlgDisponibilite->findText(dispo) < 0) dlgDisponibilite->addItem(dispo);
+        dlgDisponibilite->setCurrentText(dispo);
         dlgMarque->setText(table->item(ligne, 11)->text());
         dlgModele->setText(table->item(ligne, 12)->text());
         dlgRemarques->setPlainText(table->item(ligne, 13)->text());
@@ -1494,6 +1461,8 @@ void vehicules::ouvrirFormulaireVehicule(bool edition, int ligne)
     grid->addWidget(field("Dernière maintenance", dlgDerniere), 4, 1);
     grid->addWidget(field("Prochaine maintenance", dlgProchaine), 5, 0);
     grid->addWidget(field("Remarques", dlgRemarques), 5, 1);
+    grid->addWidget(field("Kilométrage (km)", dlgKilometrage), 6, 0);
+    grid->addWidget(field("Disponibilité", dlgDisponibilite), 6, 1);
     grid->setColumnStretch(0, 1);
     grid->setColumnStretch(1, 1);
     root->addWidget(section, 1);
@@ -1519,31 +1488,38 @@ void vehicules::ouvrirFormulaireVehicule(bool edition, int ligne)
             toast(this, "Le nom et le type sont obligatoires", "#c62828");
             return;
         }
-        if (dlgProchaine->date() <= dlgDerniere->date()) {
+        if (dlgProchaine->date() > dateVide && dlgDerniere->date() > dateVide && dlgProchaine->date() <= dlgDerniere->date()) {
             toast(this, "La prochaine maintenance doit être après la dernière", "#c62828");
             return;
         }
         qInfo() << "[Vehicules] Validation completed";
 
         nom->setText(dlgNom->text().trimmed());
+        if (type->findText(dlgType->currentText()) < 0) type->addItem(dlgType->currentText());
         type->setCurrentText(dlgType->currentText());
         marque->setText(dlgMarque->text());
         modele->setText(dlgModele->text());
         quantite->setValue(dlgCarburant->value());
         seuil->setValue(dlgSeuil->value());
+        if (etat->findText(dlgEtat->currentText()) < 0) etat->addItem(dlgEtat->currentText());
         etat->setCurrentText(dlgEtat->currentText());
         localisation->setText(dlgLocalisation->text());
+        for (auto *date : {dateAchat, dateMaintenance, prochaineMaintenance}) date->setMinimumDate(dateVide);
         dateAchat->setDate(dlgAchat->date());
         dateMaintenance->setDate(dlgDerniere->date());
+        prochaineMaintenance->setMinimumDate(dateVide);
         prochaineMaintenance->setDate(dlgProchaine->date());
+        kilometrage->setText(dlgKilometrage->text());
+        if (disponibilite->findText(dlgDisponibilite->currentText()) < 0) disponibilite->addItem(dlgDisponibilite->currentText());
+        disponibilite->setCurrentText(dlgDisponibilite->currentText());
         remarques->setText(dlgRemarques->toPlainText());
 
         if (edition) {
             table->setCurrentCell(ligne, 0);
             table->selectRow(ligne);
-            modifier();
+            if (!modifier()) return;
         } else {
-            ajouter();
+            if (!ajouter()) return;
         }
         qInfo() << "[Vehicules] Dashboard update started";
         rechercher();
@@ -1566,11 +1542,11 @@ void vehicules::afficherDetailsVehicule(int ligne)
     dlg.setWindowTitle("Détails du véhicule");
     dlg.resize(560, 520);
     dlg.setStyleSheet(
-        "QDialog{background:#F5F6F8;}"
-        "QFrame{background:white;border:1px solid #E5E7EB;border-radius:12px;}"
-        "QLabel#detailsTitle{font-size:22px;font-weight:700;color:#111827;}"
-        "QLabel#detailsLine{font-size:13px;color:#374151;padding:3px 0;}"
-        "QPushButton{background:#C90000;color:white;border:none;border-radius:8px;padding:8px 18px;font-weight:700;}");
+        "QDialog{background:#f4f2ef;}"
+        "QFrame{background:white;border:1px solid #e4e0da;border-radius:10px;}"
+        "QLabel#detailsTitle{font-size:22px;font-weight:700;color:#302934;}"
+        "QLabel#detailsLine{font-size:13px;color:#302934;padding:3px 0;}"
+        "QPushButton{background:#b51c2a;color:white;border:none;border-radius:8px;padding:8px 18px;font-weight:700;}");
 
     QVBoxLayout *root = new QVBoxLayout(&dlg);
     root->setContentsMargins(20, 18, 20, 18);
@@ -1606,6 +1582,9 @@ void vehicules::afficherDetailsVehicule(int ligne)
     addLine(9, "Dernière maintenance", table->item(ligne, 8)->text());
     addLine(10, "Prochaine maintenance", table->item(ligne, 9)->text());
     addLine(11, "Remarques", table->item(ligne, 13)->text());
+    addLine(12, "Kilométrage", table->item(ligne, 16)->text() + " km");
+    addLine(13, "Disponibilité", table->item(ligne, 17)->text());
+    dlg.resize(560, 620);
     root->addWidget(box, 1);
 
     QPushButton *close = new QPushButton("Fermer");
@@ -1621,16 +1600,16 @@ void vehicules::afficherMaintenances()
     dlg.setWindowTitle("Maintenances");
     dlg.resize(780, 520);
     dlg.setStyleSheet(
-        "QDialog{background:#F5F6F8;}"
-        "QLabel#dialogTitle{font-size:22px;font-weight:700;color:#111827;}"
-        "QLabel#dialogSubtitle{font-size:13px;color:#6B7280;}"
-        "QFrame#dialogCard{background:white;border:1px solid #E5E7EB;border-radius:12px;}"
-        "QPushButton{background:#C90000;color:white;border:none;border-radius:8px;padding:8px 18px;font-weight:700;}"
-        "QPushButton:hover{background:#B80000;}"
-        "QTableWidget{background:white;border:none;selection-background-color:#FDE8E8;selection-color:#111827;}"
-        "QHeaderView::section{background:#F3F4F6;color:#4B5563;font-size:12px;font-weight:600;"
-        "border:none;border-bottom:1px solid #E5E7EB;padding:8px 6px;}"
-        "QTableWidget::item{border-bottom:1px solid #F3F4F6;padding:4px;}");
+        "QDialog{background:#f4f2ef;}"
+        "QLabel#dialogTitle{font-size:22px;font-weight:800;color:#981a27;}"
+        "QLabel#dialogSubtitle{font-size:13px;color:#777984;}"
+        "QFrame#dialogCard{background:white;border:1px solid #e4e0da;border-radius:10px;}"
+        "QPushButton{background:#b51c2a;color:white;border:none;border-radius:8px;padding:8px 18px;font-weight:700;}"
+        "QPushButton:hover{background:#981a27;}"
+        "QTableWidget{background:white;border:none;selection-background-color:#ffe5e7;selection-color:#302934;}"
+        "QHeaderView::section{background:#5b1722;color:white;font-size:11px;font-weight:700;"
+        "border:none;border-right:1px solid #762834;padding:12px 5px;}"
+        "QTableWidget::item{border-bottom:1px solid #fbf7f8;padding:4px;}");
 
     QVBoxLayout *root = new QVBoxLayout(&dlg);
     root->setContentsMargins(20, 18, 20, 18);
@@ -1680,8 +1659,8 @@ void vehicules::afficherMaintenances()
         t->setItem(r, 2, new QTableWidgetItem(m.date.toString(FMT)));
         QString jours = m.jours < 0 ? QString("Retard %1 j").arg(-m.jours) : QString("%1 j").arg(m.jours);
         QTableWidgetItem *it = new QTableWidgetItem(jours);
-        QColor bg = m.jours < 0 || m.jours <= 7 ? QColor("#FDE8E8")
-                                                : (m.jours <= 30 ? QColor("#FEF3C7") : QColor("#F3F4F6"));
+        QColor bg = m.jours < 0 || m.jours <= 7 ? QColor("#ffe5e7")
+                                                : (m.jours <= 30 ? QColor("#FEF3C7") : QColor("#fbf7f8"));
         it->setBackground(bg);
         t->setItem(r, 3, it);
     }
@@ -1705,59 +1684,76 @@ void vehicules::majTableauxDashboard()
             delete item;
         }
 
-        struct Alert { QString title; QString detail; QString date; QString color; };
+        struct Alert { QString title; QString detail; QString date; QString color; QString vehicleId; };
         QVector<Alert> alerts;
         QDate today = QDate::currentDate();
         for (int r = 0; r < table->rowCount(); ++r) {
             if (!ligneVehiculeComplete(table, r)) continue;
-            QString ref = table->item(r, 0)->text() + "  " + table->item(r, 1)->text();
+            QString vehicleId = table->item(r, 0)->text();
+            QString ref = vehicleId + "  " + table->item(r, 1)->text();
             QString state = table->item(r, 5)->text();
             int q = table->item(r, 3)->text().toInt();
             int s = table->item(r, 4)->text().toInt();
             QDate pm = QDate::fromString(table->item(r, 9)->text(), FMT);
             if (q < s)
                 alerts.push_back({"Carburant faible", ref + QString(" - %1 % / minimum %2 %").arg(q).arg(s),
-                                  "État actuel", "#F59E0B"});
+                                  "État actuel", "#F59E0B", vehicleId});
             if (state == "Hors service")
-                alerts.push_back({"Véhicule hors service", ref + " - intervention requise", "État actuel", "#C90000"});
+                alerts.push_back({"Véhicule hors service", ref + " - intervention requise", "État actuel", "#b51c2a", vehicleId});
             if (pm.isValid()) {
                 int d = int(today.daysTo(pm));
                 if (d < 0)
                     alerts.push_back({"Maintenance en retard", ref + QString(" - retard de %1 jour(s)").arg(-d),
-                                      pm.toString(FMT), "#C90000"});
+                                      pm.toString(FMT), "#b51c2a", vehicleId});
                 else if (d <= 30)
                     alerts.push_back({"Maintenance proche", ref + QString(" - dans %1 jour(s)").arg(d),
-                                      pm.toString(FMT), "#F59E0B"});
+                                      pm.toString(FMT), "#F59E0B", vehicleId});
             }
         }
 
         int shown = 0;
         for (const Alert &a : alerts) {
             if (shown++ >= 5) break;
+            const bool information = a.title == "Maintenance proche";
             QFrame *row = new QFrame;
-            row->setStyleSheet(QString("QFrame{background:white;border:0;border-left:3px solid %1;"
-                                       "border-radius:0;padding-left:8px;}").arg(a.color));
+            row->setObjectName(information ? "vehicleInfo" : "vehicleWarning");
+            row->setMinimumHeight(60);
             QHBoxLayout *rl = new QHBoxLayout(row);
-            rl->setContentsMargins(10, 4, 4, 4);
+            rl->setContentsMargins(14, 9, 14, 9);
+            rl->setSpacing(10);
+            QLabel *icon = new QLabel;
+            icon->setPixmap(style()->standardIcon(information ? QStyle::SP_MessageBoxInformation
+                                                             : QStyle::SP_MessageBoxWarning).pixmap(24, 24));
+            icon->setFixedSize(28, 28);
+            icon->setAlignment(Qt::AlignCenter);
+            rl->addWidget(icon);
             QVBoxLayout *texts = new QVBoxLayout;
-            texts->setSpacing(1);
-            QLabel *t = new QLabel("<b>" + a.title.toHtmlEscaped() + "</b>");
-            QLabel *d = new QLabel(a.detail.toHtmlEscaped());
-            d->setStyleSheet("color:#6B7280;font-size:12px;");
-            texts->addWidget(t);
-            texts->addWidget(d);
+            texts->setSpacing(2);
+            QLabel *title = new QLabel(a.title);
+            title->setObjectName("notificationTitle");
+            QLabel *detail = new QLabel(a.detail + (a.date == "État actuel" ? QString()
+                                                     : " — Prévue le " + a.date));
+            detail->setObjectName("notificationDetail");
+            detail->setWordWrap(true);
+            texts->addWidget(title);
+            texts->addWidget(detail);
             rl->addLayout(texts, 1);
-            QLabel *date = new QLabel(a.date);
-            date->setStyleSheet("color:#9CA3AF;font-size:11px;");
-            rl->addWidget(date);
+            QPushButton *view = new QPushButton("Voir ›");
+            view->setObjectName("notificationAction");
+            view->setCursor(Qt::PointingHandCursor);
+            view->setToolTip("Voir le véhicule " + a.vehicleId);
+            connect(view, &QPushButton::clicked, this, [this, id = a.vehicleId] {
+                const int row = trouverLigneParId(table, id);
+                if (row >= 0) afficherDetailsVehicule(row);
+            });
+            rl->addWidget(view);
             alertesRecentesLayout->addWidget(row);
         }
         if (shown == 0) {
             QLabel *empty = new QLabel("Aucune alerte récente.");
-            empty->setStyleSheet("color:#6B7280;");
+            empty->setStyleSheet("color:#777984;");
             alertesRecentesLayout->addWidget(empty);
         }
-        alertesRecentesLayout->addStretch();
     }
 }
 
@@ -1767,7 +1763,8 @@ void vehicules::majTableauxDashboard()
 QString vehicules::ajouterLigne(const QString &n, const QString &t, const QString &m,
                                 const QString &mod, int q, int s, const QString &e,
                                 const QString &loc, const QString &da, const QString &dm,
-                                const QString &pm, const QString &rem)
+                                const QString &pm, const QString &rem,
+                                const QString &id, const QString &km, const QString &dispo)
 {
     qInfo() << "[Vehicules] Vehicle insertion started" << n;
 
@@ -1777,12 +1774,11 @@ QString vehicules::ajouterLigne(const QString &n, const QString &t, const QStrin
     if (sortingEnabled)
         table->setSortingEnabled(false);
 
-    const QString id = QString("VEH-%1").arg(prochainId++, 3, 10, QChar('0'));
     int row = table->rowCount();
 
     table->insertRow(row);
 
-    table->setItem(row, 0, new QTableWidgetItem(id));
+    table->setItem(row, 0, new NumItem(id));
     table->setItem(row, 1, new QTableWidgetItem(n));
     table->setItem(row, 2, new QTableWidgetItem(t));
     table->setItem(row, 3, new NumItem(QString::number(q)));
@@ -1797,11 +1793,13 @@ QString vehicules::ajouterLigne(const QString &n, const QString &t, const QStrin
     table->setItem(row, 13, new QTableWidgetItem(rem));
     table->setItem(row, 14, new NumItem("0"));
     table->setItem(row, 15, new QTableWidgetItem(""));
+    table->setItem(row, 16, new NumItem(km));
+    table->setItem(row, 17, new QTableWidgetItem(dispo));
 
     QLabel *truck = new QLabel("V");
     truck->setAlignment(Qt::AlignCenter);
     truck->setFixedSize(30, 24);
-    truck->setStyleSheet("background:#FDE8E8;color:#C90000;border:1px solid #F8CACA;"
+    truck->setStyleSheet("background:#ffe5e7;color:#b51c2a;border:1px solid #efc9cd;"
                          "border-radius:6px;font-weight:800;");
     QWidget *truckCell = new QWidget;
     QHBoxLayout *truckLayout = new QHBoxLayout(truckCell);
@@ -1825,17 +1823,17 @@ QString vehicules::ajouterLigne(const QString &n, const QString &t, const QStrin
     btnEdit->setMinimumSize(76, 30);
     btnDel->setMinimumSize(88, 30);
     btnView->setStyleSheet(
-        "QPushButton{background:#F3F4F6;color:#374151;border:1px solid #D1D5DB;"
+        "QPushButton{background:#fbf7f8;color:#302934;border:1px solid #dfe2e7;"
         "border-radius:6px;padding:4px 10px;font-weight:600;}"
-        "QPushButton:hover{background:#E5E7EB;}");
+        "QPushButton:hover{background:#e4e0da;}");
     btnEdit->setStyleSheet(
-        "QPushButton{background:#FFFFFF;color:#C90000;border:1px solid #C90000;"
+        "QPushButton{background:#FFFFFF;color:#b51c2a;border:1px solid #b51c2a;"
         "border-radius:6px;padding:4px 10px;font-weight:600;}"
-        "QPushButton:hover{background:#FDE8E8;}");
+        "QPushButton:hover{background:#ffe5e7;}");
     btnDel->setStyleSheet(
-        "QPushButton{background:#C90000;color:#FFFFFF;border:1px solid #C90000;"
+        "QPushButton{background:#b51c2a;color:#FFFFFF;border:1px solid #b51c2a;"
         "border-radius:6px;padding:4px 10px;font-weight:600;}"
-        "QPushButton:hover{background:#A80000;}");
+        "QPushButton:hover{background:#8f1420;}");
     btnView->setCursor(Qt::PointingHandCursor);
     btnEdit->setCursor(Qt::PointingHandCursor);
     btnDel->setCursor(Qt::PointingHandCursor);
@@ -1852,8 +1850,7 @@ QString vehicules::ajouterLigne(const QString &n, const QString &t, const QStrin
         int r = trouverLigneParId(table, id);
         if (r < 0) return;
         if (QMessageBox::question(this, "Suppression", "Supprimer ce véhicule ?") == QMessageBox::Yes) {
-            table->removeRow(r);
-            toast(this, "Véhicule supprimé", "#c62828");
+            supprimerVehicule(id);
         }
     });
 
@@ -1899,104 +1896,83 @@ void vehicules::chargerFormulaire(int r)
 }
 
 // =====================================================================
-void vehicules::ajouter()
+bool vehicules::ajouter()
 {
-    bool okNom  = !nom->text().trimmed().isEmpty();
-    bool okType = type->currentIndex() != 0;
-    marquerErreur(nom, !okNom);
-    marquerErreur(type, !okType);
-    if (!okNom || !okType) {
-        toast(this, "⚠  Le nom et le type sont obligatoires", "#c62828");
-        return;
-    }
-    if (prochaineMaintenance->date() <= dateMaintenance->date()) {
-        toast(this, "⚠  La prochaine maintenance doit être après la dernière", "#c62828");
-        return;
-    }
-
-    qInfo() << "[Vehicules] Add vehicle requested";
-    const QString id = ajouterLigne(nom->text().trimmed(), type->currentText(), marque->text(), modele->text(),
-                                    quantite->value(), seuil->value(), etat->currentText(), localisation->text(),
-                                    dateAchat->date().toString(FMT),
-                                    dateMaintenance->date().toString(FMT),
-                                    prochaineMaintenance->date().toString(FMT),
-                                    remarques->text());
-
-    qInfo() << "[Vehicules] Dashboard update started after insertion";
-    colorierLignes();
-    const int newRow = trouverLigneParId(table, id);
-    flashLigne(table, newRow, [this]() { colorierLignes(); });
-    qInfo() << "[Vehicules] Dashboard update completed after insertion" << id << "row" << newRow;
-
-    if (quantite->value() < seuil->value())
-        toast(this, QString("✓  Véhicule ajouté   •   ⚠ carburant faible (%1 / %2)")
-                        .arg(quantite->value()).arg(seuil->value()), "#ef6c00");
-    else
-        toast(this, "✓  Véhicule ajouté");
-
-    nom->clear();
-    marque->clear();
-    modele->clear();
-    remarques->clear();
-    localisation->clear();
-    quantite->setValue(1);
-    seuil->setValue(2);
-    type->setCurrentIndex(0);
+    return sauvegarder(false);
 }
 
-// =====================================================================
-void vehicules::modifier()
+bool vehicules::modifier()
 {
-    int r = table->currentRow();
-    if (r < 0) {
-        toast(this, "⚠  Sélectionnez d'abord une ligne (bouton Modif.)", "#ef6c00");
-        return;
-    }
-    bool okNom  = !nom->text().trimmed().isEmpty();
-    bool okType = type->currentIndex() != 0;
-    marquerErreur(nom, !okNom);
-    marquerErreur(type, !okType);
-    if (!okNom || !okType) {
-        toast(this, "⚠  Le nom et le type sont obligatoires", "#c62828");
-        return;
-    }
-    if (prochaineMaintenance->date() <= dateMaintenance->date()) {
-        toast(this, "⚠  La prochaine maintenance doit être après la dernière", "#c62828");
-        return;
-    }
+    return sauvegarder(true);
+}
 
-    struct Champ { int col; QString nouveau; };
-    QVector<Champ> champs = {
-        {1, nom->text().trimmed()},
-        {2, type->currentText()},
-        {3, QString::number(quantite->value())},
-        {4, QString::number(seuil->value())},
-        {5, etat->currentText()},
-        {6, localisation->text()},
-        {7, dateAchat->date().toString(FMT)},
-        {8, dateMaintenance->date().toString(FMT)},
-        {9, prochaineMaintenance->date().toString(FMT)},
-        {11, marque->text()},
-        {12, modele->text()},
-        {13, remarques->text()}
-    };
-
-    for (const Champ &c : champs) {
-        QString ancien = table->item(r, c.col)->text();
-        if (ancien != c.nouveau) {
-            table->item(r, c.col)->setText(c.nouveau);
-        }
+bool vehicules::chargerDepuisBase()
+{
+    QVector<VehiculeRecord> records;
+    QString erreur;
+    if (!VehiculeRepository::charger(records, erreur)) {
+        QMessageBox::critical(this, "Chargement des véhicules", erreur);
+        return false;
     }
-
+    const QString selection = table->currentRow() >= 0 && table->item(table->currentRow(), 0)
+        ? table->item(table->currentRow(), 0)->text() : QString();
+    const bool sorting = table->isSortingEnabled();
+    table->setSortingEnabled(false);
+    table->setRowCount(0);
+    for (const auto &r : records)
+        ajouterLigne(r.matricule, r.type, r.marque, r.modele, r.carburant, r.seuil,
+                     r.etat, r.localisation, r.achat.toString(FMT), r.entretien.toString(FMT),
+                     r.prochainEntretien.toString(FMT), r.remarques, r.id,
+                     QString::number(r.kilometrage), r.disponibilite);
+    table->setSortingEnabled(sorting);
     colorierLignes();
+    rechercher();
+    const int row = trouverLigneParId(table, selection);
+    if (row >= 0) table->setCurrentCell(row, 0);
+    return true;
+}
 
-    flashLigne(table, r, [this]() { colorierLignes(); });
+bool vehicules::sauvegarder(bool modification)
+{
+    const int row = table->currentRow();
+    if (modification && row < 0) return false;
+    VehiculeRecord r;
+    if (modification) r.id = table->item(row, 0)->text();
+    r.matricule = nom->text().trimmed(); r.type = type->currentIndex() > 0 ? type->currentText() : QString();
+    r.marque = marque->text(); r.modele = modele->text();
+    r.carburant = quantite->value(); r.seuil = seuil->value(); r.etat = etat->currentText();
+    r.localisation = localisation->text(); r.remarques = remarques->text();
+    bool kmValide = false;
+    r.kilometrage = kilometrage->text().toLongLong(&kmValide);
+    r.disponibilite = disponibilite->currentText();
+    const QDate dateVide(1900, 1, 1);
+    r.achat = dateAchat->date() > dateVide ? dateAchat->date() : QDate();
+    r.entretien = dateMaintenance->date() > dateVide ? dateMaintenance->date() : QDate();
+    r.prochainEntretien = prochaineMaintenance->date() > dateVide ? prochaineMaintenance->date() : QDate();
+    QString erreur;
+    if (!kmValide) erreur = "Saisissez un kilométrage entier positif ou nul.";
+    if (!erreur.isEmpty() || !VehiculeRepository::enregistrer(r, modification, erreur)) {
+        QMessageBox::critical(this, "Enregistrement impossible", erreur);
+        return false;
+    }
+    if (chargerDepuisBase()) {
+        const int nouvelleLigne = trouverLigneParId(table, r.id);
+        if (nouvelleLigne >= 0) table->setCurrentCell(nouvelleLigne, 0);
+    }
+    toast(this, modification ? "Véhicule modifié dans la base de données" : "Véhicule ajouté dans la base de données");
+    return true;
+}
 
-    if (quantite->value() < seuil->value())
-        toast(this, QString("✓  Véhicule modifié   •   ⚠ carburant faible (%1 / %2)")
-                        .arg(quantite->value()).arg(seuil->value()), "#ef6c00");
-    else
-        toast(this, "✓  Véhicule modifié");
+bool vehicules::supprimerVehicule(const QString &id)
+{
+    QString erreur;
+    if (!VehiculeRepository::supprimer(id, erreur)) {
+        QMessageBox::critical(this, "Suppression impossible", erreur);
+        return false;
+    }
+    chargerDepuisBase();
+    toast(this, "Véhicule supprimé de la base de données", "#c62828");
+    return true;
 }
 
 // =====================================================================
@@ -2117,7 +2093,7 @@ void vehicules::afficherAlertes(bool afficherSiVide)
             QString desc = "État : Hors service";
             QString detail = loc.isEmpty() ? QString() : "Localisation : " + loc;
             alertes.push_back({"❌", "Véhicule hors service", ref, desc, detail,
-                               "Critique", "#C90000", true, false});
+                               "Critique", "#b51c2a", true, false});
         }
         if (q < s) {
             QString desc = QString("Carburant : %1 % / minimum : %2 %").arg(q).arg(s);
@@ -2133,7 +2109,7 @@ void vehicules::afficherAlertes(bool afficherSiVide)
                     QString desc = QString("Maintenance en retard de %1 jour(s)").arg(-jours);
                     alertes.push_back({"📅", "Maintenance dépassée", ref, desc,
                                        "Date prévue : " + pm.toString(FMT),
-                                       "Critique", "#C90000", true, false});
+                                       "Critique", "#b51c2a", true, false});
                 } else if (jours <= 30) {
                     QString desc = QString("Maintenance prévue dans %1 jour(s)").arg(jours);
                     alertes.push_back({"⚠️", "Maintenance proche", ref, desc,
@@ -2166,19 +2142,19 @@ void vehicules::afficherAlertes(bool afficherSiVide)
     dlg->resize(760, qMin(720, 260 + int(alertes.size()) * 116));
     dlg->setMinimumSize(680, 460);
     dlg->setStyleSheet(R"QSS(
-        QDialog{background:#F5F6F8;}
-        QScrollArea{background:#F5F6F8;border:none;}
-        QWidget#alertsInner{background:#F5F6F8;}
-        QFrame#alertCard,QFrame#summaryCard{background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;}
-        QLabel{border:none;background:transparent;color:#111827;}
-        QLabel#alertTitle{font-size:26px;font-weight:700;color:#111827;}
-        QLabel#alertSubtitle{font-size:13px;color:#6B7280;}
-        QLabel#sectionTitle{font-size:15px;font-weight:700;color:#111827;}
-        QLabel#summaryValue{font-size:24px;font-weight:700;color:#111827;}
-        QLabel#summaryCaption{font-size:12px;color:#6B7280;}
+        QDialog{background:#f4f2ef;}
+        QScrollArea{background:#f4f2ef;border:none;}
+        QWidget#alertsInner{background:#f4f2ef;}
+        QFrame#alertCard,QFrame#summaryCard{background:#FFFFFF;border:1px solid #e4e0da;border-radius:10px;}
+        QLabel{border:none;background:transparent;color:#302934;}
+        QLabel#alertTitle{font-size:26px;font-weight:700;color:#302934;}
+        QLabel#alertSubtitle{font-size:13px;color:#777984;}
+        QLabel#sectionTitle{font-size:15px;font-weight:700;color:#302934;}
+        QLabel#summaryValue{font-size:24px;font-weight:700;color:#302934;}
+        QLabel#summaryCaption{font-size:12px;color:#777984;}
         QLabel#badge{border-radius:10px;padding:3px 10px;font-size:11px;font-weight:700;}
-        QPushButton#closeButton{background:#C90000;color:#FFFFFF;border:1px solid #C90000;border-radius:8px;padding:8px 18px;font-weight:700;}
-        QPushButton#closeButton:hover{background:#A80000;}
+        QPushButton#closeButton{background:#b51c2a;color:#FFFFFF;border:1px solid #b51c2a;border-radius:8px;padding:8px 18px;font-weight:700;}
+        QPushButton#closeButton:hover{background:#8f1420;}
     )QSS");
 
     QVBoxLayout *root = new QVBoxLayout(dlg);
@@ -2211,7 +2187,7 @@ void vehicules::afficherAlertes(bool afficherSiVide)
         QLabel *ico = new QLabel(emoji);
         ico->setAlignment(Qt::AlignCenter);
         ico->setFixedSize(42, 42);
-        ico->setStyleSheet("background:#FDE8E8;border-radius:21px;font-family:'Segoe UI Emoji';font-size:24px;");
+        ico->setStyleSheet("background:#ffe5e7;border-radius:21px;font-family:'Segoe UI Emoji';font-size:24px;");
         l->addWidget(ico);
         QVBoxLayout *txt = new QVBoxLayout;
         txt->setSpacing(0);
@@ -2256,14 +2232,14 @@ void vehicules::afficherAlertes(bool afficherSiVide)
         cl->addLayout(head);
 
         QLabel *veh = new QLabel(a.vehicule.toHtmlEscaped());
-        veh->setStyleSheet("font-weight:700;color:#374151;");
+        veh->setStyleSheet("font-weight:700;color:#302934;");
         QLabel *desc = new QLabel(a.description.toHtmlEscaped());
-        desc->setStyleSheet("color:#111827;");
+        desc->setStyleSheet("color:#302934;");
         cl->addWidget(veh);
         cl->addWidget(desc);
         if (!a.detail.isEmpty()) {
             QLabel *det = new QLabel(a.detail.toHtmlEscaped());
-            det->setStyleSheet("color:#6B7280;font-size:12px;");
+            det->setStyleSheet("color:#777984;font-size:12px;");
             cl->addWidget(det);
         }
         ombre(card);
@@ -2274,7 +2250,7 @@ void vehicules::afficherAlertes(bool afficherSiVide)
     root->addWidget(scroll, 1);
 
     QFrame *foot = new QFrame;
-    foot->setStyleSheet("QFrame{background:#FFFFFF;border-top:1px solid #E5E7EB;}");
+    foot->setStyleSheet("QFrame{background:#FFFFFF;border-top:1px solid #e4e0da;}");
     QHBoxLayout *fl = new QHBoxLayout(foot);
     fl->setContentsMargins(24, 12, 24, 12);
     fl->addStretch();
@@ -2381,12 +2357,6 @@ void vehicules::majCartes()
     if (QPushButton *b = findChild<QPushButton *>("btnCloche"))
         b->setText(QString("🔔  %1").arg(alertes));
 
-    if (DonutWidget *w = dynamic_cast<DonutWidget *>(donutEtat)) {
-        w->setData({"Disponible", "En mission", "En maintenance", "Hors service"},
-                   {dispo, mission, maintenance, hs},
-                   {QColor("#22A559"), QColor("#2563EB"), QColor("#F59E0B"), QColor("#C90000")});
-        w->animer();
-    }
     majTableauxDashboard();
 
     // carte "priorité de maintenance"
@@ -2424,6 +2394,7 @@ void vehicules::majCartes()
 void vehicules::setUtilisateur(const QString &nomUtilisateur, const QString &role)
 {
     Q_UNUSED(role);
+    chargerDepuisBase();
     if (QLabel *l = findChild<QLabel *>("lblUser"))
         l->setText("👤  " + nomUtilisateur + "  ▾");
 }
@@ -2461,14 +2432,14 @@ void vehicules::afficherMaintenancePredictive()
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setWindowTitle("Maintenance prédictive");
     dlg->resize(1020, 660);
-    dlg->setStyleSheet("QDialog{background:#f4f4f6;} QLabel{border:none;background:transparent;}");
+    dlg->setStyleSheet("QDialog{background:#f4f2ef;} QLabel{border:none;background:transparent;}");
 
     QVBoxLayout *root = new QVBoxLayout(dlg);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
     QFrame *banner = new QFrame;
-    banner->setStyleSheet("QFrame{background:#c40000;}");
+    banner->setStyleSheet("QFrame{background:#b51c2a;}");
     banner->setFixedHeight(76);
     QVBoxLayout *bl = new QVBoxLayout(banner);
     bl->setContentsMargins(24, 10, 24, 10);
@@ -2476,7 +2447,7 @@ void vehicules::afficherMaintenancePredictive()
     QLabel *bt = new QLabel("🛠  Maintenance prédictive");
     bt->setStyleSheet("color:white;font-size:20px;font-weight:bold;");
     QLabel *bs = new QLabel("Score de santé calculé automatiquement  •  " + today.toString(FMT));
-    bs->setStyleSheet("color:#ffd6d6;font-size:12px;");
+    bs->setStyleSheet("color:#f1bec4;font-size:12px;");
     bl->addWidget(bt);
     bl->addWidget(bs);
     root->addWidget(banner);
@@ -2535,9 +2506,9 @@ void vehicules::afficherMaintenancePredictive()
     t->setFocusPolicy(Qt::NoFocus);
     t->setStyleSheet(
         "QTableWidget{border:1px solid #e6e6e6;border-radius:8px;background:white;"
-        "alternate-background-color:#fafafa;selection-background-color:#f3c9c9;selection-color:black;}"
-        "QHeaderView::section{background:#fbeaea;color:#a90000;font-weight:bold;"
-        "border:none;border-bottom:2px solid #c40000;padding:8px 6px;}");
+        "alternate-background-color:#fbf7f8;selection-background-color:#ffe5e7;selection-color:black;}"
+        "QHeaderView::section{background:#5b1722;color:white;font-weight:bold;"
+        "border:none;border-bottom:2px solid #b51c2a;padding:8px 6px;}");
     cv->addWidget(t, 1);
     root->addWidget(corps, 1);
 
@@ -2562,15 +2533,15 @@ void vehicules::afficherMaintenancePredictive()
     fermer->setFixedHeight(34);
     fermer->setMinimumWidth(110);
     fermer->setStyleSheet(
-        "QPushButton{background:#c40000;color:white;border:none;border-radius:6px;"
+        "QPushButton{background:#b51c2a;color:white;border:none;border-radius:6px;"
         "padding:6px 18px;font-weight:bold;}"
-        "QPushButton:hover{background:#8f0000;}");
+        "QPushButton:hover{background:#8f1420;}");
     connect(fermer, &QPushButton::clicked, dlg, &QDialog::accept);
     fl->addWidget(fermer);
     root->addWidget(foot);
 
     connect(btnPlan, &QPushButton::clicked, dlg, [=]() {
-        int n = 0;
+        QVector<QPair<QString, QDate>> dates;
         for (const Ligne &l : lignes) {
             if (l.score >= 70) continue;
             QTableWidgetItem *it = table->item(l.row, 9);
@@ -2579,11 +2550,16 @@ void vehicules::afficherMaintenancePredictive()
             QDate nouvelle = l.suggeree;
             if (dm.isValid() && nouvelle <= dm) nouvelle = dm.addDays(1);
             if (!ancienne.isValid() || nouvelle < ancienne) {
-                it->setText(nouvelle.toString(FMT));
-                n++;
+                dates.append({table->item(l.row, 0)->text(), nouvelle});
             }
         }
-        colorierLignes();
+        QString erreur;
+        if (!dates.isEmpty() && !VehiculeRepository::planifier(dates, erreur)) {
+            QMessageBox::critical(dlg, "Planification impossible", erreur);
+            return;
+        }
+        const int n = dates.size();
+        chargerDepuisBase();
         dlg->accept();
         if (n > 0)
             toast(this, QString("📅  %1 maintenance(s) planifiée(s) automatiquement").arg(n), "#6a1b9a");
