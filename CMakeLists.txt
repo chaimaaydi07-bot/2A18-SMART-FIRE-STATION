@@ -43,3 +43,23 @@ set_target_properties(smartfireincidents PROPERTIES
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(smartfireincidents)
 endif()
+<<<<<<< Updated upstream
+=======
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Sql Multimedia)
+
+target_sources(smartfireincidents PRIVATE
+    connexion.cpp connexion.h
+    formation.cpp formation.h
+    inscription.cpp inscription.h
+    formationdialog.cpp formationdialog.h
+    inscriptiondialog.cpp inscriptiondialog.h
+    statsdialog.cpp statsdialog.h
+    formationswindow.cpp formationswindow.h
+    resources.qrc
+)
+
+target_link_libraries(smartfireincidents PRIVATE
+    Qt${QT_VERSION_MAJOR}::Sql
+    Qt${QT_VERSION_MAJOR}::Multimedia
+)
+>>>>>>> Stashed changes

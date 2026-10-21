@@ -1,3 +1,5 @@
+#include "formationswindow.h"
+#include "connexion.h"
 #include <QtWidgets>
 #include <QPainterPath>
 #include <QPdfWriter>
@@ -953,7 +955,19 @@ private:
 
             layout->addWidget(button);
 
-            if (name == "Incidents") {
+        if (name == "Gestion des formations") {
+            connect(button, &QPushButton::clicked, owner, [owner] {
+                static bool dbOk = Connexion::ouvrir();
+                if (!dbOk) {
+                    QMessageBox::critical(owner, "Base de donnees",
+                        "Impossible d ouvrir la base : " + Connexion::derniereErreur());
+                    return;
+                }
+                auto *w = new FormationsWindow;
+                w->setAttribute(Qt::WA_DeleteOnClose);
+                w->show();
+            });
+        } else if (name == "Incidents") {
                 if (statistics) {
                     connect(
                         button,

@@ -1,209 +1,164 @@
 #include "formation.h"
-#include <utility>
-#include <QSqlQuery>
 #include <QSqlError>
 #include <QVariant>
-#include <QDebug>
 
-Formation::Formation()
-    : id(0), duree(0), nbPlaces(0) {}
+QStringList Formation::types()
+{
+    return {"Secourisme", "Lutte contre l'incendie", "Sauvetage",
+            "Matières dangereuses", "Conduite d'engins"};
+}
 
-Formation::Formation(int id, QString titre, QString type, QDate debut, QDate fin,
-                     int duree, QString formateur, QString lieu, int places,
-                     QString niveau, QString statut)
-    : id(id), titre(titre), type(type), formateur(formateur), lieu(lieu),
-      niveau(niveau), statut(statut), dateDebut(debut), dateFin(fin),
-      duree(duree), nbPlaces(places) {}
+QString Formation::libelleStatut(const QString &c)
+{
+    if (c == "planifiee") return "Planifiée";
+    if (c == "en_cours")  return "En cours";
+    if (c == "terminee")  return "Terminée";
+    if (c == "annulee")   return "Annulée";
+    return c;
+}
 
-bool Formation::ajouter()
+QString Formation::statutAuto(const QDate &debut, const QDate &fin)
+{
+    const QDate t = QDate::currentDate();
+    if (t < debut) return "planifiee";
+    if (t > fin)   return "terminee";
+    return "en_cours";
+}
+
+void Formation::majStatuts()
 {
     QSqlQuery q;
-    q.prepare("INSERT INTO FORMATION (ID, TITRE, TYPE, DATE_DEBUT, DATE_FIN, DUREE, "
-              "FORMATEUR, LIEU, NB_PLACES, NIVEAU, STATUT) "
-              "VALUES (:id, :titre, :type, TO_DATE(:debut,'YYYY-MM-DD'), TO_DATE(:fin,'YYYY-MM-DD'), :duree, :formateur, :lieu, "
-              ":places, :niveau, :statut)");
-    q.bindValue(":id", id);
-    q.bindValue(":titre", titre);
-    q.bindValue(":type", type);
-    q.bindValue(":debut", dateDebut.toString("yyyy-MM-dd"));
-    q.bindValue(":fin", dateFin.toString("yyyy-MM-dd"));
-    q.bindValue(":duree", duree);
-    q.bindValue(":formateur", formateur);
-    q.bindValue(":lieu", lieu);
-    q.bindValue(":places", nbPlaces);
-    q.bindValue(":niveau", niveau);
-    q.bindValue(":statut", statut);
-    if (!q.exec()) { qDebug() << q.lastError().text(); return false; }
+    q.prepare("UPDATE formation SET statut = CASE"
+              " WHEN :t < date_debut THEN 'planifiee'"
+              " WHEN :t > date_fin THEN 'terminee' ELSE 'en_cours' END"
+              " WHERE statut <> 'annulee'");
+    q.bindValue(":t", QDate::currentDate().toString(Qt::ISODate));
+    q.exec();
+}
+
+QString Formation::valider() const
+{
+    if (intitule.trimmed().isEmpty()) return "L'intitulé est obligatoire.";
+    if (type.trimmed().isEmpty())     return "Le type est obligatoire.";
+    if (!dateDebut.isValid() || !dateFin.isValid()) return "Les dates sont obligatoires.";
+    if (dateFin < dateDebut) return "La date de fin doit être postérieure ou égale à la date de début.";
+    if (duree <= 0)     return "La durée doit être strictement positive.";
+    if (capacite <= 0)  return "La capacité doit être strictement positive.";
+    return QString();
+}
+
+bool Formation::ajouter(QString *erreur)
+{
+    const QString e = valider();
+    if (!e.isEmpty()) { *erreur = e; return false; }
+
+    QSqlQuery d;   // prévention des doublons
+    d.prepare("SELECT COUNT(*) FROM formation WHERE lower(intitule)=lower(?) AND date_debut=?");
+    d.addBindValue(intitule.trimmed()); d.addBindValue(dateDebut.toString(Qt::ISODate)); d.exec();
+    if (d.next() && d.value(0).toInt() > 0) {
+        *erreur = "Une formation avec le même intitulé et la même date de début existe déjà.";
+        return false;
+    }
+    if (statut != "annulee") statut = statutAuto(dateDebut, dateFin);
+
+    QSqlQuery q;
+    q.prepare("INSERT INTO formation(intitule,type,formateur,date_debut,date_fin,duree,lieu,capacite,certification,statut)"
+              " VALUES(?,?,?,?,?,?,?,?,?,?)");
+    q.addBindValue(intitule.trimmed()); q.addBindValue(type); q.addBindValue(formateur.trimmed());
+    q.addBindValue(dateDebut.toString(Qt::ISODate)); q.addBindValue(dateFin.toString(Qt::ISODate));
+    q.addBindValue(duree); q.addBindValue(lieu.trimmed()); q.addBindValue(capacite);
+    q.addBindValue(certification ? 1 : 0); q.addBindValue(statut);
+    if (!q.exec()) { *erreur = q.lastError().text(); return false; }
+    id = q.lastInsertId().toInt();
     return true;
 }
 
-bool Formation::modifier()
+bool Formation::modifier(QString *erreur)
 {
-    QSqlQuery q;
-    q.prepare("UPDATE FORMATION SET TITRE=:titre, TYPE=:type, DATE_DEBUT=TO_DATE(:debut,'YYYY-MM-DD'), "
-              "DATE_FIN=TO_DATE(:fin,'YYYY-MM-DD'), DUREE=:duree, FORMATEUR=:formateur, LIEU=:lieu, "
-              "NB_PLACES=:places, NIVEAU=:niveau, STATUT=:statut WHERE ID=:id");
-    q.bindValue(":id", id);
-    q.bindValue(":titre", titre);
-    q.bindValue(":type", type);
-    q.bindValue(":debut", dateDebut.toString("yyyy-MM-dd"));
-    q.bindValue(":fin", dateFin.toString("yyyy-MM-dd"));
-    q.bindValue(":duree", duree);
-    q.bindValue(":formateur", formateur);
-    q.bindValue(":lieu", lieu);
-    q.bindValue(":places", nbPlaces);
-    q.bindValue(":niveau", niveau);
-    q.bindValue(":statut", statut);
-    if (!q.exec()) { qDebug() << q.lastError().text(); return false; }
-    return q.numRowsAffected() > 0;
-}
-
-bool Formation::supprimer(int idSup)
-{
-    QSqlQuery q;
-    q.prepare("DELETE FROM INSCRIPTION WHERE ID_FORMATION=:id");
-    q.bindValue(":id", idSup);
-    q.exec();
-    q.prepare("DELETE FROM FORMATION WHERE ID=:id");
-    q.bindValue(":id", idSup);
-    if (!q.exec()) { qDebug() << q.lastError().text(); return false; }
-    return q.numRowsAffected() > 0;
-}
-
-QSqlQueryModel* Formation::afficher()
-{
-    QSqlQueryModel *m = new QSqlQueryModel();
-    m->setQuery("SELECT ID, TITRE, TYPE, TO_CHAR(DATE_DEBUT,'YYYY-MM-DD') AS DATE_DEBUT, TO_CHAR(DATE_FIN,'YYYY-MM-DD') AS DATE_FIN, DUREE, FORMATEUR, "
-                "LIEU, NB_PLACES, NIVEAU, STATUT FROM FORMATION");
-    m->setHeaderData(0, Qt::Horizontal, QObject::tr("ID"));
-    m->setHeaderData(1, Qt::Horizontal, QObject::tr("Titre"));
-    m->setHeaderData(2, Qt::Horizontal, QObject::tr("Type"));
-    m->setHeaderData(3, Qt::Horizontal, QObject::tr("Début"));
-    m->setHeaderData(4, Qt::Horizontal, QObject::tr("Fin"));
-    m->setHeaderData(5, Qt::Horizontal, QObject::tr("Durée (h)"));
-    m->setHeaderData(6, Qt::Horizontal, QObject::tr("Formateur"));
-    m->setHeaderData(7, Qt::Horizontal, QObject::tr("Lieu"));
-    m->setHeaderData(8, Qt::Horizontal, QObject::tr("Places"));
-    m->setHeaderData(9, Qt::Horizontal, QObject::tr("Niveau"));
-    m->setHeaderData(10, Qt::Horizontal, QObject::tr("Statut"));
-    return m;
-}
-
-QSqlQueryModel* Formation::rechercher(const QString &critere)
-{
-    QSqlQueryModel *m = new QSqlQueryModel();
-    QSqlQuery q;
-    q.prepare("SELECT ID, TITRE, TYPE, TO_CHAR(DATE_DEBUT,'YYYY-MM-DD') AS DATE_DEBUT, TO_CHAR(DATE_FIN,'YYYY-MM-DD') AS DATE_FIN, DUREE, FORMATEUR, "
-              "LIEU, NB_PLACES, NIVEAU, STATUT FROM FORMATION "
-              "WHERE TO_CHAR(ID) LIKE :c OR TITRE LIKE :c OR TYPE LIKE :c "
-              "OR FORMATEUR LIKE :c OR LIEU LIKE :c OR STATUT LIKE :c");
-    q.bindValue(":c", "%" + critere + "%");
-    q.exec();
-    m->setQuery(std::move(q));
-    m->setHeaderData(0, Qt::Horizontal, QObject::tr("ID"));
-    m->setHeaderData(1, Qt::Horizontal, QObject::tr("Titre"));
-    m->setHeaderData(2, Qt::Horizontal, QObject::tr("Type"));
-    m->setHeaderData(3, Qt::Horizontal, QObject::tr("Début"));
-    m->setHeaderData(4, Qt::Horizontal, QObject::tr("Fin"));
-    m->setHeaderData(5, Qt::Horizontal, QObject::tr("Durée (h)"));
-    m->setHeaderData(6, Qt::Horizontal, QObject::tr("Formateur"));
-    m->setHeaderData(7, Qt::Horizontal, QObject::tr("Lieu"));
-    m->setHeaderData(8, Qt::Horizontal, QObject::tr("Places"));
-    m->setHeaderData(9, Qt::Horizontal, QObject::tr("Niveau"));
-    m->setHeaderData(10, Qt::Horizontal, QObject::tr("Statut"));
-    return m;
-}
-
-QSqlQueryModel* Formation::trier(const QString &colonne, bool croissant)
-{
-    // La colonne vient d'une liste fermee (pas de saisie libre) : on la valide quand meme.
-    static const QStringList autorisees =
-        {"ID","TITRE","TYPE","DATE_DEBUT","DATE_FIN","DUREE","FORMATEUR","LIEU","NB_PLACES","NIVEAU","STATUT"};
-    QString col = autorisees.contains(colonne) ? colonne : "ID";
-
-    QSqlQueryModel *m = new QSqlQueryModel();
-    m->setQuery("SELECT ID, TITRE, TYPE, TO_CHAR(DATE_DEBUT,'YYYY-MM-DD') AS DATE_DEBUT, TO_CHAR(DATE_FIN,'YYYY-MM-DD') AS DATE_FIN, DUREE, FORMATEUR, "
-                "LIEU, NB_PLACES, NIVEAU, STATUT FROM FORMATION ORDER BY " + col +
-                (croissant ? " ASC" : " DESC"));
-    m->setHeaderData(0, Qt::Horizontal, QObject::tr("ID"));
-    m->setHeaderData(1, Qt::Horizontal, QObject::tr("Titre"));
-    m->setHeaderData(2, Qt::Horizontal, QObject::tr("Type"));
-    m->setHeaderData(3, Qt::Horizontal, QObject::tr("Début"));
-    m->setHeaderData(4, Qt::Horizontal, QObject::tr("Fin"));
-    m->setHeaderData(5, Qt::Horizontal, QObject::tr("Durée (h)"));
-    m->setHeaderData(6, Qt::Horizontal, QObject::tr("Formateur"));
-    m->setHeaderData(7, Qt::Horizontal, QObject::tr("Lieu"));
-    m->setHeaderData(8, Qt::Horizontal, QObject::tr("Places"));
-    m->setHeaderData(9, Qt::Horizontal, QObject::tr("Niveau"));
-    m->setHeaderData(10, Qt::Horizontal, QObject::tr("Statut"));
-    return m;
-}
-
-QMap<QString,int> Formation::statistiquesParType()
-{
-    QMap<QString,int> res;
-    QSqlQuery q("SELECT TYPE, COUNT(*) FROM FORMATION GROUP BY TYPE");
-    while (q.next())
-        res.insert(q.value(0).toString(), q.value(1).toInt());
-    return res;
-}
-
-bool Formation::existe(int idTest)
-{
-    QSqlQuery q;
-    q.prepare("SELECT COUNT(*) FROM FORMATION WHERE ID=:id");
-    q.bindValue(":id", idTest);
-    return q.exec() && q.next() && q.value(0).toInt() > 0;
-}
-
-int Formation::nbInscrits(int idFormation)
-{
-    QSqlQuery q;
-    q.prepare("SELECT COUNT(*) FROM INSCRIPTION WHERE ID_FORMATION=:id");
-    q.bindValue(":id", idFormation);
-    return (q.exec() && q.next()) ? q.value(0).toInt() : 0;
-}
-
-// Enregistre la presence d'un agent a une formation (inscription deja existante)
-bool Formation::enregistrerPresence(int idFormation, int idPompier)
-{
-    if (!existe(idFormation)) return false;
-
-    QSqlQuery p;
-    p.prepare("SELECT NB_PLACES FROM FORMATION WHERE ID=:id");
-    p.bindValue(":id", idFormation);
-    if (!p.exec() || !p.next()) return false;
-    if (nbInscrits(idFormation) >= p.value(0).toInt()) return false; // formation complete
+    const QString e = valider();
+    if (!e.isEmpty()) { *erreur = e; return false; }
+    if (capacite < inscrits(id)) {
+        *erreur = QString("La capacité ne peut pas être inférieure au nombre d'inscrits (%1).").arg(inscrits(id));
+        return false;
+    }
+    QSqlQuery d;
+    d.prepare("SELECT COUNT(*) FROM formation WHERE lower(intitule)=lower(?) AND date_debut=? AND id<>?");
+    d.addBindValue(intitule.trimmed()); d.addBindValue(dateDebut.toString(Qt::ISODate)); d.addBindValue(id); d.exec();
+    if (d.next() && d.value(0).toInt() > 0) {
+        *erreur = "Une autre formation avec le même intitulé et la même date de début existe déjà.";
+        return false;
+    }
+    if (statut != "annulee") statut = statutAuto(dateDebut, dateFin);
 
     QSqlQuery q;
-    q.prepare("INSERT INTO INSCRIPTION (ID_FORMATION, ID_POMPIER, DATE_PRESENCE) "
-              "VALUES (:f, :p, TO_DATE(:d,'YYYY-MM-DD'))");
-    q.bindValue(":f", idFormation);
-    q.bindValue(":p", idPompier);
-    q.bindValue(":d", QDate::currentDate().toString("yyyy-MM-dd"));
+    q.prepare("UPDATE formation SET intitule=?,type=?,formateur=?,date_debut=?,date_fin=?,duree=?,"
+              "lieu=?,capacite=?,certification=?,statut=? WHERE id=?");
+    q.addBindValue(intitule.trimmed()); q.addBindValue(type); q.addBindValue(formateur.trimmed());
+    q.addBindValue(dateDebut.toString(Qt::ISODate)); q.addBindValue(dateFin.toString(Qt::ISODate));
+    q.addBindValue(duree); q.addBindValue(lieu.trimmed()); q.addBindValue(capacite);
+    q.addBindValue(certification ? 1 : 0); q.addBindValue(statut); q.addBindValue(id);
+    if (!q.exec()) { *erreur = q.lastError().text(); return false; }
+    return true;
+}
+
+bool Formation::supprimer(int id)
+{
+    QSqlQuery q;
+    q.prepare("DELETE FROM formation WHERE id=?");
+    q.addBindValue(id);
     return q.exec();
 }
 
-// Recherche + tri combines (utilise par l'interface)
-QSqlQueryModel* Formation::lister(const QString &critere, const QString &colonne, bool croissant)
+bool Formation::charger(int id, Formation &f)
 {
-    static const QStringList autorisees =
-        {"ID","TITRE","TYPE","DATE_DEBUT","DATE_FIN","DUREE","FORMATEUR","LIEU","NB_PLACES","NIVEAU","STATUT"};
-    QString col = autorisees.contains(colonne) ? colonne : "ID";
+    QSqlQuery q;
+    q.prepare("SELECT intitule,type,formateur,date_debut,date_fin,duree,lieu,capacite,certification,statut"
+              " FROM formation WHERE id=?");
+    q.addBindValue(id);
+    if (!q.exec() || !q.next()) return false;
+    f.id = id; f.intitule = q.value(0).toString(); f.type = q.value(1).toString();
+    f.formateur = q.value(2).toString();
+    f.dateDebut = QDate::fromString(q.value(3).toString(), Qt::ISODate);
+    f.dateFin = QDate::fromString(q.value(4).toString(), Qt::ISODate);
+    f.duree = q.value(5).toInt(); f.lieu = q.value(6).toString(); f.capacite = q.value(7).toInt();
+    f.certification = q.value(8).toInt() != 0; f.statut = q.value(9).toString();
+    return true;
+}
 
-    QString sql = "SELECT ID, TITRE, TYPE, TO_CHAR(DATE_DEBUT,'YYYY-MM-DD') AS DATE_DEBUT, TO_CHAR(DATE_FIN,'YYYY-MM-DD') AS DATE_FIN, DUREE, FORMATEUR, LIEU, "
-                  "NB_PLACES, NIVEAU, STATUT FROM FORMATION";
-    bool filtre = !critere.trimmed().isEmpty();
-    if (filtre)
-        sql += " WHERE TO_CHAR(ID) LIKE :c OR TITRE LIKE :c OR TYPE LIKE :c "
-               "OR FORMATEUR LIKE :c OR LIEU LIKE :c OR STATUT LIKE :c";
-    sql += " ORDER BY " + col + (croissant ? " ASC" : " DESC");
+int Formation::inscrits(int idFormation)
+{
+    QSqlQuery q;
+    q.prepare("SELECT COUNT(*) FROM inscription WHERE id_formation=? AND etat='inscrit'");
+    q.addBindValue(idFormation); q.exec();
+    return q.next() ? q.value(0).toInt() : 0;
+}
+
+int Formation::placesRestantes(int idFormation)
+{
+    Formation f;
+    if (!charger(idFormation, f)) return 0;
+    return f.capacite - inscrits(idFormation);
+}
+
+// Recherche et tri réalisés par la base ; colonne de tri validée par liste blanche.
+QSqlQuery Formation::liste(const QString &recherche, const QString &colonneTri, bool croissant)
+{
+    static const QStringList autorisees = {"date_debut", "type", "statut", "places", "intitule", "id"};
+    const QString col = autorisees.contains(colonneTri) ? colonneTri : "date_debut";
 
     QSqlQuery q;
-    q.prepare(sql);
-    if (filtre) q.bindValue(":c", "%" + critere.trimmed() + "%");
+    q.prepare(QString(
+        "SELECT * FROM ("
+        " SELECT f.id AS id, f.intitule AS intitule, f.type AS type, f.formateur AS formateur,"
+        "  f.date_debut AS date_debut, f.date_fin AS date_fin, f.duree AS duree, f.lieu AS lieu,"
+        "  f.capacite AS capacite,"
+        "  (SELECT COUNT(*) FROM inscription i WHERE i.id_formation=f.id AND i.etat='inscrit') AS inscrits,"
+        "  f.certification AS certification, f.statut AS statut,"
+        "  f.capacite - (SELECT COUNT(*) FROM inscription i WHERE i.id_formation=f.id AND i.etat='inscrit') AS places"
+        " FROM formation f)"
+        " WHERE intitule LIKE :r OR type LIKE :r OR formateur LIKE :r OR replace(statut,'_',' ') LIKE :r"
+        " ORDER BY %1 %2, id").arg(col, croissant ? "ASC" : "DESC"));
+    q.bindValue(":r", "%" + recherche.trimmed() + "%");
     q.exec();
-    QSqlQueryModel *m = new QSqlQueryModel();
-    m->setQuery(std::move(q));
-    return m;
+    return q;
 }

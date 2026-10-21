@@ -1,65 +1,32 @@
 #ifndef FORMATION_H
 #define FORMATION_H
-
 #include <QString>
 #include <QDate>
-#include <QSqlQueryModel>
-#include <QMap>
+#include <QSqlQuery>
 
-class Formation
-{
+// Entité Formation + règles métier (validation, statut automatique, requêtes).
+class Formation {
 public:
-    Formation();
-    Formation(int id, QString titre, QString type, QDate debut, QDate fin,
-              int duree, QString formateur, QString lieu, int places,
-              QString niveau, QString statut);
-
-    // Getters
-    int     getId() const        { return id; }
-    QString getTitre() const     { return titre; }
-    QString getType() const      { return type; }
-    QDate   getDateDebut() const { return dateDebut; }
-    QDate   getDateFin() const   { return dateFin; }
-    int     getDuree() const     { return duree; }
-    QString getFormateur() const { return formateur; }
-    QString getLieu() const      { return lieu; }
-    int     getNbPlaces() const  { return nbPlaces; }
-    QString getNiveau() const    { return niveau; }
-    QString getStatut() const    { return statut; }
-
-    // Setters
-    void setId(int v)            { id = v; }
-    void setTitre(QString v)     { titre = v; }
-    void setType(QString v)      { type = v; }
-    void setDateDebut(QDate v)   { dateDebut = v; }
-    void setDateFin(QDate v)     { dateFin = v; }
-    void setDuree(int v)         { duree = v; }
-    void setFormateur(QString v) { formateur = v; }
-    void setLieu(QString v)      { lieu = v; }
-    void setNbPlaces(int v)      { nbPlaces = v; }
-    void setNiveau(QString v)    { niveau = v; }
-    void setStatut(QString v)    { statut = v; }
-
-    // CRUD
-    bool ajouter();
-    bool modifier();
-    bool supprimer(int id);
-    QSqlQueryModel* afficher();
-
-    // Metiers
-    QSqlQueryModel* lister(const QString &critere, const QString &colonne, bool croissant);
-    QSqlQueryModel* rechercher(const QString &critere);
-    QSqlQueryModel* trier(const QString &colonne, bool croissant = true);
-    QMap<QString,int> statistiquesParType();
-    bool existe(int id);
-    bool enregistrerPresence(int idFormation, int idPompier);
-    int  nbInscrits(int idFormation);
-
-private:
-    int id;
-    QString titre, type, formateur, lieu, niveau, statut;
+    int id = 0;
+    QString intitule, type, formateur, lieu;
     QDate dateDebut, dateFin;
-    int duree, nbPlaces;
-};
+    int duree = 0, capacite = 0;
+    bool certification = false;
+    QString statut;               // planifiee | en_cours | terminee | annulee
 
-#endif // FORMATION_H
+    QString valider() const;      // "" si valide, sinon message d'erreur
+    bool ajouter(QString *erreur);
+    bool modifier(QString *erreur);
+    static bool supprimer(int id);
+    static bool charger(int id, Formation &f);
+
+    static QString statutAuto(const QDate &debut, const QDate &fin);
+    static void majStatuts();     // planifiee -> en_cours -> terminee
+    static int inscrits(int idFormation);
+    static int placesRestantes(int idFormation);
+
+    static QSqlQuery liste(const QString &recherche, const QString &colonneTri, bool croissant);
+    static QStringList types();
+    static QString libelleStatut(const QString &code);
+};
+#endif
