@@ -10,9 +10,9 @@ Connection::Connection() {}
 // 2) Remplacez l'utilisateur et le mot de passe par ceux de votre schema Oracle.
 bool Connection::createConnection()
 {
-    const QString NOM_SOURCE_ODBC = "Source_Projet2A";
-    const QString UTILISATEUR     = "votre_user";
-    const QString MOT_DE_PASSE    = "votre_mdp";
+    const QString NOM_SOURCE_ODBC = "projet2A";
+    const QString UTILISATEUR     = "linda";
+    const QString MOT_DE_PASSE    = "lindaa";
 
     QSqlDatabase db = QSqlDatabase::addDatabase("QODBC");
     db.setDatabaseName(NOM_SOURCE_ODBC);
