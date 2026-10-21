@@ -33,7 +33,7 @@ else()
 endif()
 
 target_link_libraries(smartfireincidents
-    PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
+    PRIVATE Qt${QT_VERSION_MAJOR}::WidgetsQt${QT_VERSION_MAJOR}::Sql
 )
 
 set_target_properties(smartfireincidents PROPERTIES
