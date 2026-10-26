@@ -44,6 +44,7 @@ public:
     bool ajouter();
     bool modifier();
     bool supprimer(int id);
+     bool recuperer(int id);
     QSqlQueryModel* afficher();
 
     // Metiers
@@ -51,6 +52,7 @@ public:
     QSqlQueryModel* rechercher(const QString &critere);
     QSqlQueryModel* trier(const QString &colonne, bool croissant = true);
     QMap<QString,int> statistiquesParType();
+        QSqlQueryModel* prochaines(int jours = 7);
     bool existe(int id);
     bool enregistrerPresence(int idFormation, int idPompier);
     int  nbInscrits(int idFormation);

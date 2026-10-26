@@ -207,3 +207,40 @@ QSqlQueryModel* Formation::lister(const QString &critere, const QString &colonne
     m->setQuery(std::move(q));
     return m;
 }
+// Formations planifiees qui commencent dans les "jours" prochains jours
+QSqlQueryModel* Formation::prochaines(int jours)
+{
+    QSqlQuery q;
+    q.prepare("SELECT ID, TITRE, TYPE, LIEU, TO_CHAR(DATE_DEBUT,'YYYY-MM-DD') AS DATE_DEBUT, FORMATEUR "
+              "FROM FORMATION WHERE STATUT=:statut "
+              "AND DATE_DEBUT BETWEEN TO_DATE(:a,'YYYY-MM-DD') AND TO_DATE(:b,'YYYY-MM-DD') "
+              "ORDER BY DATE_DEBUT");
+    q.bindValue(":statut", "Planifiée");
+    q.bindValue(":a", QDate::currentDate().toString("yyyy-MM-dd"));
+    q.bindValue(":b", QDate::currentDate().addDays(jours).toString("yyyy-MM-dd"));
+    q.exec();
+    QSqlQueryModel *m = new QSqlQueryModel();
+    m->setQuery(std::move(q));
+    return m;
+}
+// Charge dans l'objet courant la formation dont l'identifiant est donne
+bool Formation::recuperer(int idRech)
+{
+    QSqlQuery q;
+    q.prepare("SELECT TITRE, TYPE, TO_CHAR(DATE_DEBUT,'YYYY-MM-DD'), TO_CHAR(DATE_FIN,'YYYY-MM-DD'), "
+              "DUREE, FORMATEUR, LIEU, NB_PLACES, NIVEAU, STATUT FROM FORMATION WHERE ID=:id");
+    q.bindValue(":id", idRech);
+    if (!q.exec() || !q.next()) return false;
+    id = idRech;
+    titre = q.value(0).toString();
+    type = q.value(1).toString();
+    dateDebut = QDate::fromString(q.value(2).toString(), "yyyy-MM-dd");
+    dateFin = QDate::fromString(q.value(3).toString(), "yyyy-MM-dd");
+    duree = q.value(4).toInt();
+    formateur = q.value(5).toString();
+    lieu = q.value(6).toString();
+    nbPlaces = q.value(7).toInt();
+    niveau = q.value(8).toString();
+    statut = q.value(9).toString();
+    return true;
+}
