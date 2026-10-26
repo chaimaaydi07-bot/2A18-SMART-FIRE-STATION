@@ -13,7 +13,7 @@
 // ============================================================================
 class Agent
 {
-    QString id, nom, prenom, poste, grade, specialite, telephone, disponibilite;
+    QString id, nom, prenom, poste, grade, specialite, telephone, cin, disponibilite;
     QString certification;
     QDate   dateObtention, dateEcheance;
     QString motDePasse;            // mot de passe chiffré (SHA-256), vide = pas d'accès
@@ -23,7 +23,7 @@ public:
     // Constructeurs
     Agent() {}
     Agent(QString id, QString nom, QString prenom, QString poste, QString grade,
-          QString specialite, QString telephone, QString disponibilite,
+          QString specialite, QString telephone, QString cin, QString disponibilite,
           QString certification, QDate dateObtention, QDate dateEcheance,
           QString motDePasse);
 
@@ -35,6 +35,7 @@ public:
     QString getGrade() { return grade; }
     QString getSpecialite() { return specialite; }
     QString getTelephone() { return telephone; }
+    QString getCin() { return cin; }
     QString getDisponibilite() { return disponibilite; }
     QString getCertification() { return certification; }
     QDate   getDateObtention() { return dateObtention; }
@@ -49,6 +50,7 @@ public:
     void setGrade(QString v) { grade = v; }
     void setSpecialite(QString v) { specialite = v; }
     void setTelephone(QString v) { telephone = v; }
+    void setCin(QString v) { cin = v; }
     void setDisponibilite(QString v) { disponibilite = v; }
     void setCertification(QString v) { certification = v; }
     void setDateObtention(QDate v) { dateObtention = v; }
@@ -61,6 +63,7 @@ public:
     QSqlQueryModel *afficher();                  // Étape 1 : AFFICHER
     bool ajouter();                              // Étape 2 : AJOUTER
     bool telephoneExiste(QString telephone, QString saufId);   // contrôle de saisie
+    bool cinExiste(QString cin, QString saufId);               // contrôle de saisie
     bool posteExiste(QString poste, QString saufId);           // contrôle : un seul chef
     bool modifier();                             // Étape 3 : MODIFIER
     bool modifierMotDePasse(QString id, QString motDePasse);   // mot de passe oublié

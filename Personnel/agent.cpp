@@ -3,7 +3,7 @@
 #include <QObject>
 
 Agent::Agent(QString id, QString nom, QString prenom, QString poste, QString grade,
-             QString specialite, QString telephone, QString disponibilite,
+             QString specialite, QString telephone, QString cin, QString disponibilite,
              QString certification, QDate dateObtention, QDate dateEcheance,
              QString motDePasse)
 {
@@ -14,6 +14,7 @@ Agent::Agent(QString id, QString nom, QString prenom, QString poste, QString gra
     this->grade = grade;
     this->specialite = specialite;
     this->telephone = telephone;
+    this->cin = cin;
     this->disponibilite = disponibilite;
     this->certification = certification;
     this->dateObtention = dateObtention;
@@ -39,7 +40,8 @@ QSqlQueryModel *Agent::afficher()
                     "a.telephone, a.disponibilite, a.certification, "
                     "TO_CHAR(a.date_obtention, 'YYYY-MM-DD'), "
                     "TO_CHAR(a.date_echeance, 'YYYY-MM-DD'), a.mot_de_passe, "
-                    "(SELECT COUNT(*) FROM INTERVENTION i WHERE i.id_agent = a.id_agent) "
+                    "(SELECT COUNT(*) FROM INTERVENTION i WHERE i.id_agent = a.id_agent), "
+                    "a.cin "
                     "FROM AGENT a ORDER BY a.id_agent");
     while (model->canFetchMore())       // charger toutes les lignes
         model->fetchMore();
@@ -57,6 +59,7 @@ QSqlQueryModel *Agent::afficher()
     model->setHeaderData(10, Qt::Horizontal, QObject::tr("Date d'échéance"));
     model->setHeaderData(11, Qt::Horizontal, QObject::tr("Mot de passe"));
     model->setHeaderData(12, Qt::Horizontal, QObject::tr("Interventions"));
+    model->setHeaderData(13, Qt::Horizontal, QObject::tr("CIN"));
 
     erreur = model->lastError().isValid() ? model->lastError().text() : QString();
     return model;
@@ -69,9 +72,9 @@ bool Agent::ajouter()
 
     // prepare() prend la requête en paramètre pour la préparer à l'exécution.
     query.prepare("INSERT INTO AGENT (id_agent, nom, prenom, poste, grade, specialite, "
-                  "telephone, disponibilite, certification, date_obtention, date_echeance, "
+                  "telephone, cin, disponibilite, certification, date_obtention, date_echeance, "
                   "mot_de_passe) "
-                  "VALUES (:id, :nom, :prenom, :poste, :grade, :specialite, :telephone, "
+                  "VALUES (:id, :nom, :prenom, :poste, :grade, :specialite, :telephone, :cin, "
                   ":disponibilite, :certification, TO_DATE(:obtention, 'YYYY-MM-DD'), "
                   "TO_DATE(:echeance, 'YYYY-MM-DD'), :motDePasse)");
 
@@ -83,6 +86,7 @@ bool Agent::ajouter()
     query.bindValue(":grade", grade);
     query.bindValue(":specialite", specialite);
     query.bindValue(":telephone", telephone);
+    query.bindValue(":cin", cin);
     query.bindValue(":disponibilite", disponibilite);
     query.bindValue(":certification", certification);
     query.bindValue(":obtention", texteDate(dateObtention));
@@ -107,6 +111,17 @@ bool Agent::telephoneExiste(QString telephone, QString saufId)
     return query.exec() && query.next() && query.value(0).toInt() > 0;
 }
 
+// Contrôle de saisie : vrai si un autre agent a déjà ce CIN
+bool Agent::cinExiste(QString cin, QString saufId)
+{
+    QSqlQuery query;
+    query.prepare("SELECT COUNT(*) FROM AGENT WHERE cin = :cin "
+                  "AND id_agent <> :id");
+    query.bindValue(":cin", cin);
+    query.bindValue(":id", saufId.isEmpty() ? QString("-") : saufId);
+    return query.exec() && query.next() && query.value(0).toInt() > 0;
+}
+
 // Contrôle de cohérence : vrai si un autre agent occupe déjà ce poste
 // (utilisé pour le Chef de caserne, qui doit être unique).
 bool Agent::posteExiste(QString poste, QString saufId)
@@ -125,7 +140,7 @@ bool Agent::modifier()
     QSqlQuery query;
     query.prepare("UPDATE AGENT SET nom = :nom, prenom = :prenom, poste = :poste, "
                   "grade = :grade, specialite = :specialite, telephone = :telephone, "
-                  "disponibilite = :disponibilite, certification = :certification, "
+                  "cin = :cin, disponibilite = :disponibilite, certification = :certification, "
                   "date_obtention = TO_DATE(:obtention, 'YYYY-MM-DD'), "
                   "date_echeance = TO_DATE(:echeance, 'YYYY-MM-DD'), "
                   "mot_de_passe = :motDePasse "
@@ -136,6 +151,7 @@ bool Agent::modifier()
     query.bindValue(":grade", grade);
     query.bindValue(":specialite", specialite);
     query.bindValue(":telephone", telephone);
+    query.bindValue(":cin", cin);
     query.bindValue(":disponibilite", disponibilite);
     query.bindValue(":certification", certification);
     query.bindValue(":obtention", texteDate(dateObtention));

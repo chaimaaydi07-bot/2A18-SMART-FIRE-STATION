@@ -38,6 +38,7 @@
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QRegularExpressionValidator>
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QStackedWidget>
@@ -777,6 +778,10 @@ QWidget *FireStation::creerFormulaire()
     cPre->addWidget(lP); cPre->addWidget(edPrenom);
     rNom->addLayout(cNom); rNom->addLayout(cPre);
     l->addLayout(rNom);
+    // Contrôle de saisie : lettres seulement, 50 caractères au plus (VARCHAR2(50))
+    const QRegularExpression lettres("[A-Za-zÀ-ÖØ-öø-ÿ' -]{0,50}");
+    edNom->setValidator(new QRegularExpressionValidator(lettres, edNom));
+    edPrenom->setValidator(new QRegularExpressionValidator(lettres, edPrenom));
 
     auto *rGr = new QHBoxLayout;
     auto *cG = new QVBoxLayout, *cS = new QVBoxLayout;
@@ -793,10 +798,23 @@ QWidget *FireStation::creerFormulaire()
     rGr->addLayout(cG, 1); rGr->addLayout(cS, 1);
     l->addLayout(rGr);
 
-    champ("Téléphone (utilisé pour les SMS)");
+    // CIN et téléphone sur la même ligne (le formulaire reste visible en entier)
+    auto *rCin = new QHBoxLayout;
+    auto *cCin = new QVBoxLayout, *cTel = new QVBoxLayout;
+    edCin = new QLineEdit;
+    edCin->setPlaceholderText("8 chiffres");
+    // Contrôle de saisie : uniquement des chiffres, 8 au plus
+    edCin->setValidator(new QRegularExpressionValidator(QRegularExpression("[0-9]{0,8}"), edCin));
     edTel = new QLineEdit;
     edTel->setPlaceholderText("+216 20 123 456");
-    l->addWidget(edTel);
+    // Contrôle de saisie : chiffres, « + » et espaces seulement
+    edTel->setValidator(new QRegularExpressionValidator(QRegularExpression("[+0-9 ]{0,16}"), edTel));
+    auto *lC = new QLabel("CIN");             lC->setProperty("champ", "true");
+    auto *lT = new QLabel("Téléphone (SMS)"); lT->setProperty("champ", "true");
+    cCin->addWidget(lC); cCin->addWidget(edCin);
+    cTel->addWidget(lT); cTel->addWidget(edTel);
+    rCin->addLayout(cCin, 1); rCin->addLayout(cTel, 1);
+    l->addLayout(rCin);
 
     // Mot de passe : affiché seulement si le poste a accès à l'application (voir ACCES)
     auto *lblMdp = new QLabel("Mot de passe de connexion");
@@ -829,7 +847,7 @@ QWidget *FireStation::creerFormulaire()
     scroll->setObjectName("zoneCerts");
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setFixedHeight(180);
+    scroll->setFixedHeight(130);    // une seule certification par agent
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     // Fond transparent pour la zone seulement (un style sans sélecteur s'appliquerait
     // aussi aux listes déroulantes des certifications, qui deviendraient noires)
@@ -861,6 +879,16 @@ QWidget *FireStation::creerFormulaire()
     l->addLayout(rb);
 
     connect(cbPoste, &QComboBox::currentTextChanged, this, [this] { onPosteChanged(); });
+
+    // Contrôle de saisie : message quand le validateur refuse un caractère
+    auto signaler = [this](QLineEdit *ed, const QString &message) {
+        connect(ed, &QLineEdit::inputRejected, this, [this, message] { lblErreur->setText(message); });
+        connect(ed, &QLineEdit::textEdited, this, [this] { lblErreur->clear(); });
+    };
+    signaler(edNom,    "Le nom ne doit contenir que des lettres (50 caractères au plus).");
+    signaler(edPrenom, "Le prénom ne doit contenir que des lettres (50 caractères au plus).");
+    signaler(edCin,    "Le CIN ne contient que des chiffres (8 au plus).");
+    signaler(edTel,    "Le téléphone ne contient que des chiffres, « + » et des espaces.");
     connect(bAddC, &QPushButton::clicked, this, [this] { ajouterCertLigne(); });
     connect(btnAjouter,  &QPushButton::clicked, this, &FireStation::ajouter);
     connect(btnModifier, &QPushButton::clicked, this, &FireStation::modifier);
@@ -1105,6 +1133,7 @@ void FireStation::chargerAgents()
                             QDate::fromString(v(10), "yyyy-MM-dd")});
         a.mdpHash = v(11);
         a.mois = model->data(model->index(r, 12)).toInt();
+        a.cin = v(13);
         m_agents.append(a);
     }
     delete model;
@@ -1127,7 +1156,7 @@ Agent FireStation::versAgent(const FicheAgent &f) const
     Certification c;                      // la certification la plus proche de l'échéance
     for (const Certification &x : f.certs)
         if (c.nom.isEmpty() || x.echeance < c.echeance) c = x;
-    return Agent(f.id, f.nom, f.prenom, f.poste, f.grade, f.specialite, f.tel, f.dispo,
+    return Agent(f.id, f.nom, f.prenom, f.poste, f.grade, f.specialite, f.tel, f.cin, f.dispo,
                  c.nom, c.obtention, c.echeance, f.mdpHash);
 }
 
@@ -1268,6 +1297,7 @@ void FireStation::ajouterCertLigne(const Certification &c)
     nom->addItems(connues);
     nom->setCurrentText(c.nom);
     nom->lineEdit()->setPlaceholderText("Nom de la certification");
+    nom->lineEdit()->setMaxLength(80);   // VARCHAR2(80) dans la table AGENT
     g->addWidget(nom, 0, 0, 1, 3);
 
     auto *l1 = new QLabel("Obtention");
@@ -1333,9 +1363,17 @@ bool FireStation::lireFormulaire(FicheAgent &a, QString &erreur)
     a.grade      = aUnGrade(a.poste)       ? cbGrade->currentText() : QString();
     a.specialite = estOperationnel(a.poste) ? cbSpec->currentText()  : QString();
     a.tel        = edTel->text().trimmed();
+    a.cin        = edCin->text().trimmed();
     a.dispo      = cbDispo->currentText();
 
     if (a.nom.isEmpty() || a.prenom.isEmpty()) { erreur = "Nom et prénom obligatoires."; return false; }
+    // Contrôle de saisie : CIN de 8 chiffres, unique
+    if (!QRegularExpression("^[0-9]{8}$").match(a.cin).hasMatch()) {
+        erreur = "Le CIN doit contenir exactement 8 chiffres."; return false;
+    }
+    if (m_agentTmp.cinExiste(a.cin, m_editingId)) {            // contrôle dans la classe Agent
+        erreur = "Ce CIN appartient déjà à un autre agent."; return false;
+    }
     // Contrôle de saisie : numéro tunisien, 8 chiffres, avec ou sans +216.
     // Il est toujours enregistré au même format : +216 XX XXX XXX
     QString chiffres = a.tel;
@@ -1419,7 +1457,7 @@ void FireStation::reinitialiser()
 {
     m_editingId.clear();
     lblFormTitle->setText("＋ Nouvel agent");
-    edNom->clear(); edPrenom->clear(); edTel->clear(); edMdp->clear();
+    edNom->clear(); edPrenom->clear(); edTel->clear(); edCin->clear(); edMdp->clear();
     cbPoste->setCurrentIndex(0);
     cbGrade->setCurrentIndex(0);
     cbSpec->setCurrentIndex(0);
@@ -1439,7 +1477,7 @@ void FireStation::chargerDansFormulaire(const QString &id)
     const FicheAgent &a = m_agents[i];
     m_editingId = id;
     lblFormTitle->setText("✎ Modifier " + id);
-    edNom->setText(a.nom); edPrenom->setText(a.prenom); edTel->setText(a.tel);
+    edNom->setText(a.nom); edPrenom->setText(a.prenom); edTel->setText(a.tel); edCin->setText(a.cin);
     cbPoste->setCurrentText(a.poste);
     onPosteChanged();
     if (!a.grade.isEmpty())      cbGrade->setCurrentText(a.grade);
@@ -1483,7 +1521,8 @@ void FireStation::consulter(const QString &id)
     box.setTextFormat(Qt::RichText);
     box.setText(QString("<h3>%1 — %2 %3</h3>"
                         "<p>Poste : %4<br>Grade : %5<br>Spécialité : %6<br>"
-                        "Tél : %7<br>Disponibilité : %8<br>"
+                        "Tél : %7<br>CIN : " + (a.cin.isEmpty() ? QString("—") : a.cin) +
+                        "<br>Disponibilité : %8<br>"
                         "Accès à l'application : %11</p>"
                         "<b>Certifications</b><ul>%9</ul>"
                         "<b>Formations recommandées</b><ul>%10</ul>")

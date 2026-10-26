@@ -36,7 +36,7 @@ struct Certification {
 // Les utilisateurs de l'application sont des agents qui ont un mot de passe ;
 // leur rôle (droits d'accès) correspond à leur poste.
 struct FicheAgent {
-    QString id, nom, prenom, poste, grade, specialite, tel, dispo;
+    QString id, nom, prenom, poste, grade, specialite, tel, cin, dispo;
     QList<Certification> certs;
     int mois = 0;                   // nombre d'interventions (table INTERVENTION, statistiques)
     QString mdpHash;                // mot de passe chiffré (vide = n'utilise pas l'application)
@@ -162,6 +162,7 @@ private:
     QLabel       *lblFormTitle = nullptr;
     QComboBox    *cbPoste = nullptr, *cbGrade = nullptr, *cbSpec = nullptr, *cbDispo = nullptr;
     QLineEdit    *edNom = nullptr, *edPrenom = nullptr, *edTel = nullptr, *edMdp = nullptr;
+    QLineEdit    *edCin = nullptr;
     QFrame       *m_carteFormulaire = nullptr;
     QVBoxLayout  *certsLayout = nullptr;
     QList<CertRow> m_certRows;
