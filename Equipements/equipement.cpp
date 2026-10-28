@@ -37,3 +37,25 @@ QSqlQueryModel *Equipement::afficher()
     model->setHeaderData(9, Qt::Horizontal, QObject::tr("Vehicule"));
     return model ;
 }
+bool Equipement::ajouter()
+{
+    QSqlQuery query;
+    query.prepare("INSERT INTO EQUIPEMENT (id_equipement, nom, type, marque,
+                  modele, "
+                  "quantite, etat, date_achat, date_entretien, id_vehicule) "
+                  "VALUES (:id, :nom, :type, :marque, :modele, :quantite,
+                  :etat, "
+                  "TO_DATE(:achat, 'YYYY-MM-DD'), TO_DATE(:entretien, 'YYYYMM-DD'), :vehicule)");
+    query.bindValue(":id", id);
+    query.bindValue(":nom", nom);
+    query.bindValue(":type", type);
+    query.bindValue(":marque", marque);
+    query.bindValue(":modele", modele);
+    query.bindValue(":quantite", quantite);
+    query.bindValue(":etat", etat);
+    query.bindValue(":achat", dateAchat); // texte "2026-10-22"
+    query.bindValue(":entretien", dateEntretien);
+    query.bindValue(":vehicule", idVehicule.isEmpty() ? QVariant() :
+                                     idVehicule);
+    return query.exec();
+}

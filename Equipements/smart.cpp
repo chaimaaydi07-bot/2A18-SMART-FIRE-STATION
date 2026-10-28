@@ -2697,21 +2697,39 @@ void smart::ajouter()
         toast(this, "⚠  Le nom et le type sont obligatoires", "#c62828");
         return;
     }
+    // Contrôle de saisie (guide, étape 6) : la base refuse l'inverse
+    // (contrainte ck_equipement_dates).
+    if (dateMaintenance->date() < dateAchat->date()) {
+        marquerErreur(dateMaintenance, true);
+        toast(this, "⚠  La date d'entretien doit être après la date d'achat", "#c62828");
+        return;
+    }
+    marquerErreur(dateMaintenance, false);
     if (prochaineMaintenance->date() <= dateMaintenance->date()) {
         toast(this, "⚠  La prochaine maintenance doit être après la dernière", "#c62828");
         return;
     }
 
-    ajouterLigne(nom->text().trimmed(), type->currentText(), marque->text(), modele->text(),
-                 quantite->value(), seuil->value(), etat->currentText(), localisation->text(),
-                 dateAchat->date().toString(FMT),
-                 dateMaintenance->date().toString(FMT),
-                 prochaineMaintenance->date().toString(FMT),
-                 remarques->text());
+    // L'identifiant est obligatoire : il est fabriqué à partir des
+    // identifiants déjà présents dans la table (EQ-001, EQ-002, ...).
+    const QString idEq = prochainIdentifiant(table);
+
+    // Étape 2 du guide : l'ajout se fait dans Oracle, par le Modèle.
+    Equipement eq(idEq, nom->text().trimmed(), type->currentText(), marque->text(),
+                  modele->text(), quantite->value(), etat->currentText(),
+                  dateAchat->date(), dateMaintenance->date(), QString());
+
+    if (!eq.ajouter()) {
+        QMessageBox::critical(this, "Ajout",
+                              "Ajout non effectué\n\n" + eq.derniereErreur());
+        return;
+    }
+    // On n'appelle plus ajouterLigne à la main : c'est chargerDepuisBase()
+    // qui actualise le tableau depuis Oracle.
+    chargerDepuisBase();
 
     {
-        int nr = table->rowCount() - 1;
-        QString ref = table->item(nr, 0)->text() + "  " + table->item(nr, 1)->text();
+        QString ref = idEq + "  " + nom->text().trimmed();
         journaliser("Ajout", ref,
                     QString("Type : %1  •  Quantité : %2  •  État : %3  •  Localisation : %4")
                         .arg(type->currentText()).arg(quantite->value())
@@ -2727,7 +2745,7 @@ void smart::ajouter()
                                corpsEmail(QStringList{"• " + ref + " — " + motifs.join(" ; ")}), ref);
     }
 
-    flashLigne(table, table->rowCount() - 1, [this]() { colorierLignes(); });
+    flashLigne(table, ligneDeId(table, idEq), [this]() { colorierLignes(); });
 
     if (quantite->value() < seuil->value())
         toast(this, QString("✓  Équipement ajouté   •   ⚠ stock insuffisant (%1 / %2)")
@@ -2744,7 +2762,6 @@ void smart::ajouter()
     seuil->setValue(2);
     type->setCurrentIndex(0);
 }
-
 // =====================================================================
 void smart::modifier()
 {
