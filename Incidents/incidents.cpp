@@ -676,6 +676,7 @@ private:
     QDateTimeEdit *dateInput = nullptr;
     QSpinBox *victimsInput = nullptr;
     QLineEdit *addressInput = nullptr;
+    QLineEdit *codeInput = nullptr;
     QTextEdit *descriptionInput = nullptr;
     QComboBox *statusInput = nullptr;
 
@@ -902,6 +903,9 @@ private:
         victimsInput->setRange(0, 9999);
 
         addressInput = new QLineEdit;
+        codeInput = new QLineEdit;
+        codeInput->setMaxLength(20);
+        codeInput->setPlaceholderText("Ex. INC-2026-001 (facultatif, unique)");
         addressInput->setMaxLength(150);
         addressInput->setPlaceholderText(
             "Ex. Tunis, Centre-ville"
@@ -960,6 +964,7 @@ private:
             );
 
         form->addLayout(grid);
+        grid->addLayout(createField("Code (unique)", codeInput), 5, 0, 1, 2);
         form->addStretch();
 
         auto *formButtons = new QGridLayout;
@@ -1023,7 +1028,7 @@ private:
 
         searchInput = new QLineEdit;
         searchInput->setPlaceholderText(
-            "⌕ Rechercher par type, adresse ou ID..."
+            "⌕ Rechercher par code, type, adresse ou ID..."
             );
 
         gravityFilter = new QComboBox;
@@ -1057,13 +1062,14 @@ private:
 
         list->addLayout(sortRow);
 
-        table = new QTableWidget(0, 6);
+        table = new QTableWidget(0, 7);
         table->setHorizontalHeaderLabels({
             "ID",
             "TYPE",
             "ADRESSE",
             "GRAVITÉ",
             "STATUT",
+            "CODE",
             "ACTION"
         });
 
@@ -1077,7 +1083,7 @@ private:
             );
 
         table->horizontalHeader()->setSectionResizeMode(
-            5,
+            6,
             QHeaderView::ResizeToContents
             );
 
@@ -1256,6 +1262,7 @@ private:
 
         victimsInput->setValue(0);
         addressInput->clear();
+        codeInput->clear();
         descriptionInput->clear();
         statusInput->setCurrentIndex(0);
     }
@@ -1272,6 +1279,7 @@ private:
         dateInput->setDateTime(incident.date);
         victimsInput->setValue(incident.victims);
         addressInput->setText(incident.address);
+        codeInput->setText(incident.code);
 
         descriptionInput->setPlainText(
             incident.description
@@ -1295,6 +1303,13 @@ private:
 
     bool validateForm()
     {
+        const QString code = codeInput->text().trimmed();
+        if (code.toUtf8().size() > 20) {
+            QMessageBox::warning(this, "Code trop long",
+                                 "Le code ne doit pas dépasser 20 octets.");
+            codeInput->setFocus();
+            return false;
+        }
         const QString adresse =
             addressInput->text().trimmed();
 
@@ -1420,6 +1435,7 @@ private:
         incident.date = dateInput->dateTime();
         incident.victims = victimsInput->value();
         incident.address = addressInput->text().trimmed();
+        incident.code = codeInput->text().trimmed();
 
         incident.description =
             descriptionInput->toPlainText().trimmed();
@@ -1581,6 +1597,7 @@ private:
 
             if (
                 !search.isEmpty() &&
+                !incident.code.contains(search, Qt::CaseInsensitive) &&
                 !incident.type.contains(
                     search, Qt::CaseInsensitive
                     ) &&
@@ -1673,10 +1690,11 @@ private:
                 incident.type,
                 incident.address,
                 incident.gravity,
-                incident.status
+                incident.status,
+                incident.code
             };
 
-            for (int column = 0; column < 5; ++column) {
+            for (int column = 0; column < 6; ++column) {
                 auto *item =
                     new QTableWidgetItem(values.at(column));
 
@@ -1746,7 +1764,7 @@ private:
             layout->addWidget(archiveButton);
             layout->addWidget(deleteButton);
 
-            table->setCellWidget(row, 5, actions);
+            table->setCellWidget(row, 6, actions);
             table->setRowHeight(row, 36);
 
             const QString id = incident.id;

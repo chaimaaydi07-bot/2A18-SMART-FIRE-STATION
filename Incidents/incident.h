@@ -12,6 +12,7 @@ public:
     Incident();
 
     QString id;
+    QString code;
     QString type;
     QDateTime date;
     QString address;
