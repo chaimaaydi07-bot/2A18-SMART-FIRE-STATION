@@ -46,6 +46,10 @@ bool Incident::executer(const QString &sql,
 
     if (!query.exec()) {
         erreur = query.lastError().text();
+        if (erreur.contains("ORA-00001") &&
+            erreur.contains("UQ_INCIDENT_CODE", Qt::CaseInsensitive)) {
+            erreur = "Ce code est déjà utilisé par un autre incident (y compris archivé).";
+        }
         query.finish();
         db.rollback();
         return false;
@@ -76,10 +80,10 @@ bool Incident::ajouter(QString &erreur) const
     const QString sql =
         "INSERT INTO INCIDENT "
         "(id_incident, type, date_heure, adresse, "
-        "niveau_gravite, nb_victimes, description, statut) "
+        "niveau_gravite, nb_victimes, description, statut, code) "
         "VALUES (?, ?, "
         "TO_DATE(?, 'YYYY-MM-DD HH24:MI:SS'), "
-        "?, ?, ?, ?, ?)";
+        "?, ?, ?, ?, ?, ?)";
 
     const QVariantList valeurs {
         id,
@@ -89,7 +93,8 @@ bool Incident::ajouter(QString &erreur) const
         gravity,
         victims,
         description,
-        status
+        status,
+        code.trimmed()
     };
 
     return executer(sql, valeurs, erreur);
@@ -116,7 +121,7 @@ bool Incident::afficher(std::vector<Incident> &liste,
         "SELECT id_incident, type, "
         "TO_CHAR(date_heure, 'YYYY-MM-DD HH24:MI:SS'), "
         "adresse, niveau_gravite, nb_victimes, "
-        "description, statut "
+        "description, statut, code "
         "FROM INCIDENT "
         "ORDER BY date_heure DESC, id_incident";
 
@@ -147,6 +152,7 @@ bool Incident::afficher(std::vector<Incident> &liste,
         incident.victims = query.value(5).toInt();
         incident.description = query.value(6).toString();
         incident.status = query.value(7).toString();
+        incident.code = query.value(8).toString();
         incident.archived = incident.status == "Archivé";
 
         resultat.push_back(incident);
@@ -172,7 +178,7 @@ bool Incident::modifier(QString &erreur) const
         "niveau_gravite = ?, "
         "nb_victimes = ?, "
         "description = ?, "
-        "statut = ? "
+        "statut = ?, code = ? "
         "WHERE id_incident = ? "
         "AND statut <> 'Archivé'";
 
@@ -184,6 +190,7 @@ bool Incident::modifier(QString &erreur) const
         victims,
         description,
         status,
+        code.trimmed(),
         id
     };
 
