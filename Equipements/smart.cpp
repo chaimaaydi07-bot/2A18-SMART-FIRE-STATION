@@ -1,4 +1,5 @@
 #include "smart.h"
+#include "equipement.h"
 #include <QLabel>
 #include <QPixmap>
 #include <QComboBox>
@@ -71,6 +72,8 @@
 #include <QPageSize>
 #include <QPageLayout>
 #include <QMargins>
+#include <QSqlQueryModel>
+#include <QSqlQuery>
 
 // =====================================================================
 //  Colonnes du tableau
@@ -2219,36 +2222,7 @@ smart::smart(QWidget *parent)
         "border:none;border-right:1px solid #762834;padding:10px 5px;}");
 
     // données de démonstration
-    QStringList noms = {
-        "Extincteur CO2", "Casque", "Appareil respiratoire", "Tenue de feu",
-        "Gants", "Bottes", "Scie à béton", "Lampe torche"
-    };
-    QStringList marques = {
-        "Rosenbauer", "MSA", "Dräger", "Bullard",
-        "Ziamatic", "Holmatro", "Husqvarna", "Petzl"
-    };
-    QStringList etats = {
-        "Disponible", "En maintenance", "Hors service", "Disponible",
-        "En mission", "Disponible", "En maintenance", "En mission"
-    };
-    QStringList lieux = {
-        "Garage", "Vestiaire", "Véhicule 1", "Vestiaire",
-        "Magasin", "Vestiaire", "Garage", "Véhicule 2"
-    };
-    int seuils[8] = {10, 3, 3, 25, 3, 3, 3, 3};
-
-    QDate today = QDate::currentDate();
-    for (int i = 0; i < noms.size(); i++) {
-        QDate pm = today.addMonths(6);
-        if (i == 2) pm = today.addDays(10);   // maintenance proche
-        if (i == 4) pm = today.addDays(-5);   // maintenance dépassée
-        ajouterLigne(noms[i], "Protection", marques[i], "PSS 7000",
-                     (i + 1) * 5, seuils[i], etats[i], lieux[i],
-                     today.addYears(-1).toString(FMT),
-                     today.addMonths(-6).toString(FMT),
-                     pm.toString(FMT), "");
-    }
-
+    chargerDepuisBase();
     // message affiché quand le tableau est vide / sans résultat
     {
         QLabel *vide = new QLabel(table->viewport());
@@ -3842,5 +3816,27 @@ void smart::appliquerTheme(bool sombre)
     update();
 }
 
+void smart::chargerDepuisBase()
+{
+    table->setRowCount(0);                       // 1. vider le tableau
 
+    Equipement e;
+    QSqlQueryModel *m = e.afficher();            // 2. lire la base
+
+    for (int r = 0; r < m->rowCount(); ++r) {    // 3. une ligne par enregistrement
+        ajouterLigne(
+            m->data(m->index(r, 0)).toString(),  // id
+            m->data(m->index(r, 1)).toString(),  // nom
+            m->data(m->index(r, 2)).toString(),  // type
+            m->data(m->index(r, 3)).toString(),  // marque
+            m->data(m->index(r, 4)).toString(),  // modèle
+            m->data(m->index(r, 5)).toString(),  // quantité
+            m->data(m->index(r, 6)).toString(),  // état
+            m->data(m->index(r, 7)).toString(),  // date achat
+            m->data(m->index(r, 8)).toString(),  // date entretien
+            m->data(m->index(r, 9)).toString()   // véhicule
+            );
+    }
+    delete m;                                    // 4. supprimer le modèle
+}
 
