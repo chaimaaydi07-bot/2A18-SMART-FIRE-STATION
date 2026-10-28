@@ -21,6 +21,7 @@ if(QT_VERSION_MAJOR EQUAL 6)
     qt_add_executable(smartfireincidents
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
+        Equipements/equipement.h Equipements/equipement.cpp
     )
 else()
     add_executable(smartfireincidents
