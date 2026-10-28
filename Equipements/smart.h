@@ -27,6 +27,7 @@ private slots:
     void trier();
 
 private:
+    void chargerDepuisBase();
     void ajouterLigne(const QString &n, const QString &t, const QString &m,
                       const QString &mod, int q, int s, const QString &e,
                       const QString &loc, const QString &da, const QString &dm,

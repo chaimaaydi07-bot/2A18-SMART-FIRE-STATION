@@ -15,7 +15,8 @@ SOURCES += \
     pageconnexion.cpp \
     ../Incidents/incidents.cpp \
     ../Vehicules/vehicules.cpp \
-    ../Equipements/smart.cpp
+    ../Equipements/smart.cpp \
+    ../Equipements/equipement.cpp
 
 HEADERS += \
     agent.h \
@@ -25,7 +26,8 @@ HEADERS += \
     pageconnexion.h \
     ../Incidents/incidents.h \
     ../Vehicules/vehicules.h \
-    ../Equipements/smart.h
+    ../Equipements/smart.h \
+    ../Equipements/equipement.h
 
 RESOURCES += \
     ressources.qrc \

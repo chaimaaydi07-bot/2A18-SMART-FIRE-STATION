@@ -91,3 +91,13 @@ bool Equipement::modifier()
     erreur = QString();
     return query.numRowsAffected() > 0;   // faux si l'id n'existe pas
 }
+
+
+bool Equipement::supprimer(QString id)
+{
+    QSqlQuery query;
+    query.prepare("DELETE FROM EQUIPEMENT WHERE id_equipement = :id");
+    query.bindValue(":id", id);
+    if (!query.exec()) return false;
+    return query.numRowsAffected() > 0;
+}

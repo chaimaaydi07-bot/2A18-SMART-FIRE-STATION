@@ -2640,12 +2640,27 @@ void smart::ajouterLigne(const QString &n, const QString &t, const QString &m,
         int r = table->indexAt(actions->mapTo(table->viewport(), QPoint(0, 0))).row();
         if (r < 0) return;
         if (QMessageBox::question(this, "Suppression", "Supprimer cet équipement ?") == QMessageBox::Yes) {
-            QString ref = table->item(r, 0)->text() + "  " + table->item(r, 1)->text();
+            QString idEq = table->item(r, 0)->text();           // colonne de l'id
+            QString ref = idEq + "  " + table->item(r, 1)->text();
             QString det = QString("Type : %1  •  Quantité : %2  •  État : %3")
                               .arg(table->item(r, 2)->text(), table->item(r, 3)->text(), table->item(r, 5)->text());
-            table->removeRow(r);
+
+            // Étape 4 du guide : la suppression se fait dans Oracle, par le Modèle.
+            Equipement eq;
+            if (!eq.supprimer(idEq)) {
+                QMessageBox::critical(this, "Erreur",
+                                      "Suppression non effectuée\n\n" + eq.derniereErreur());
+                return;
+            }
             journaliser("Suppression", ref, det);
             toast(this, "🗑  Équipement supprimé", "#c62828");
+            // On ne fait plus removeRow : le tableau est rechargé depuis la base.
+            // Le rechargement détruit les boutons de la ligne, donc celui qui est
+            // en train d'être cliqué : on attend la fin du clic (singleShot 0).
+            QTimer::singleShot(0, this, [this]() {
+                chargerDepuisBase();
+                colorierLignes();
+            });
         }
     });
 
