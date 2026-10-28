@@ -59,3 +59,35 @@ bool Equipement::ajouter()
                                      idVehicule);
     return query.exec();
 }
+
+bool Equipement::modifier()
+{
+    QSqlQuery query;
+
+    // Sans la condition WHERE, on modifierait toutes les lignes de la table !
+    query.prepare("UPDATE EQUIPEMENT SET nom = :nom, type = :type, marque = :marque, "
+                  "modele = :modele, quantite = :quantite, etat = :etat, "
+                  "date_achat = TO_DATE(:achat, 'YYYY-MM-DD'), "
+                  "date_entretien = TO_DATE(:entretien, 'YYYY-MM-DD'), "
+                  "id_vehicule = :vehicule "
+                  "WHERE id_equipement = :id");
+
+    // mêmes bindValue que dans ajouter()
+    query.bindValue(":nom", nom);
+    query.bindValue(":type", type);
+    query.bindValue(":marque", marque);
+    query.bindValue(":modele", modele);
+    query.bindValue(":quantite", quantite);
+    query.bindValue(":etat", etat);
+    query.bindValue(":achat", texteDate(dateAchat));
+    query.bindValue(":entretien", texteDate(dateEntretien));
+    query.bindValue(":vehicule", idVehicule.isEmpty() ? QVariant() : QVariant(idVehicule));
+    query.bindValue(":id", id);
+
+    if (!query.exec()) {
+        erreur = query.lastError().text();
+        return false;
+    }
+    erreur = QString();
+    return query.numRowsAffected() > 0;   // faux si l'id n'existe pas
+}

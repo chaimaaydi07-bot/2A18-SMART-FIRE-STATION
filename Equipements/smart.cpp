@@ -2778,6 +2778,14 @@ void smart::modifier()
         toast(this, "⚠  Le nom et le type sont obligatoires", "#c62828");
         return;
     }
+    // Contrôle de saisie (guide, étape 6) : la base refuse l'inverse
+    // (contrainte ck_equipement_dates).
+    if (dateMaintenance->date() < dateAchat->date()) {
+        marquerErreur(dateMaintenance, true);
+        toast(this, "⚠  La date d'entretien doit être après la date d'achat", "#c62828");
+        return;
+    }
+    marquerErreur(dateMaintenance, false);
     if (prochaineMaintenance->date() <= dateMaintenance->date()) {
         toast(this, "⚠  La prochaine maintenance doit être après la dernière", "#c62828");
         return;
@@ -2799,6 +2807,10 @@ void smart::modifier()
         {"Remarques", 13, remarques->text()}
     };
 
+    // L'identifiant de la ligne sélectionnée : c'est lui qui désigne
+    // l'enregistrement à modifier (clause WHERE de l'UPDATE).
+    const QString idEq = table->item(r, 0)->text();
+
     QStringList changements;
     bool alerteConcernee = false;
     for (const Champ &c : champs) {
@@ -2806,11 +2818,24 @@ void smart::modifier()
         if (ancien != c.nouveau) {
             changements << QString("%1 : %2 → %3").arg(c.label, ancien, c.nouveau);
             if (c.col == 3 || c.col == 4 || c.col == 5) alerteConcernee = true;
-            table->item(r, c.col)->setText(c.nouveau);
         }
     }
 
-    QString ref = table->item(r, 0)->text() + "  " + table->item(r, 1)->text();
+    // Étape 3 du guide : la modification se fait dans Oracle, par le Modèle.
+    // On ne modifie plus les cellules du tableau à la main.
+    Equipement eq(idEq, nom->text().trimmed(), type->currentText(), marque->text(),
+                  modele->text(), quantite->value(), etat->currentText(),
+                  dateAchat->date(), dateMaintenance->date(), QString());
+
+    if (!eq.modifier()) {
+        QMessageBox::critical(this, "Modification",
+                              "Modification non effectuée\n\n" + eq.derniereErreur());
+        return;
+    }
+    chargerDepuisBase();
+    r = ligneDeId(table, idEq);
+
+    QString ref = idEq + "  " + nom->text().trimmed();
     if (!changements.isEmpty())
         journaliser("Modification", ref, changements.join("  •  "));
     if (alerteConcernee) {
@@ -2835,7 +2860,6 @@ void smart::modifier()
     else
         toast(this, "✓  Équipement modifié");
 }
-
 // =====================================================================
 void smart::rechercher()
 {
