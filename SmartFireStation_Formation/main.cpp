@@ -8,13 +8,16 @@ int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
 
-    // Connexion Oracle : si elle echoue (Oracle pas encore installe), l'interface
-    // s'ouvre quand meme en MODE APERCU avec des donnees de demonstration.
+    // Test de connexion, comme dans l'atelier Meyers Singleton.
+    // En cas d'echec, l'interface reste accessible en mode apercu.
     Connection& c = Connection::createInstance();
     const bool connecte = c.createConnection();
-    if (!connecte) {
+    if (connecte) {
+        QMessageBox::information(nullptr, "Base de donnees",
+                                 "Connexion Oracle/ODBC reussie.");
+    } else {
         QMessageBox::warning(nullptr, "Connexion Oracle/ODBC",
-                             "L'application demarrera en mode apercu.\n\n"
+                             "Echec de connexion. L'application demarrera en mode apercu.\n\n"
                              + Connection::derniereErreur());
     }
 
