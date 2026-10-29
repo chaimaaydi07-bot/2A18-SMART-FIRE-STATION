@@ -32,13 +32,13 @@ static int gravityRank(const QString &gravity)
 
 static QString calculatePriority(const Incident &incident)
 {
-    if (incident.gravity == "Critique" || incident.victims >= 5)
+    if (incident.getGravity() == "Critique" || incident.getVictims() >= 5)
         return "Urgente";
 
-    if (incident.gravity == "Élevée" || incident.victims >= 2)
+    if (incident.getGravity() == "Élevée" || incident.getVictims() >= 2)
         return "Haute";
 
-    if (incident.gravity == "Moyenne" || incident.victims >= 1)
+    if (incident.getGravity() == "Moyenne" || incident.getVictims() >= 1)
         return "Normale";
 
     return "Faible";
@@ -1239,8 +1239,8 @@ private:
     {
         for (Incident &incident : incidents) {
             if (
-                incident.id == selectedId &&
-                !incident.archived
+                incident.getId() == selectedId &&
+                !incident.getArchived()
                 ) {
                 return &incident;
             }
@@ -1269,23 +1269,23 @@ private:
 
     void fillForm(const Incident &incident)
     {
-        selectedId = incident.id;
+        selectedId = incident.getId();
 
-        if (typeInput->findText(incident.type) < 0)
-            typeInput->addItem(incident.type);
+        if (typeInput->findText(incident.getType()) < 0)
+            typeInput->addItem(incident.getType());
 
-        typeInput->setCurrentText(incident.type);
-        gravityInput->setCurrentText(incident.gravity);
-        dateInput->setDateTime(incident.date);
-        victimsInput->setValue(incident.victims);
-        addressInput->setText(incident.address);
-        codeInput->setText(incident.code);
+        typeInput->setCurrentText(incident.getType());
+        gravityInput->setCurrentText(incident.getGravity());
+        dateInput->setDateTime(incident.getDate());
+        victimsInput->setValue(incident.getVictims());
+        addressInput->setText(incident.getAddress());
+        codeInput->setText(incident.getCode());
 
         descriptionInput->setPlainText(
-            incident.description
+            incident.getDescription()
             );
 
-        statusInput->setCurrentText(incident.status);
+        statusInput->setCurrentText(incident.getStatus());
     }
 
     void selectTableRow(int row)
@@ -1430,17 +1430,16 @@ protected:
 private:
     void copyFormToIncident(Incident &incident)
     {
-        incident.type = typeInput->currentText();
-        incident.gravity = gravityInput->currentText();
-        incident.date = dateInput->dateTime();
-        incident.victims = victimsInput->value();
-        incident.address = addressInput->text().trimmed();
-        incident.code = codeInput->text().trimmed();
+        incident.setType(typeInput->currentText());
+        incident.setGravity(gravityInput->currentText());
+        incident.setDate(dateInput->dateTime());
+        incident.setVictims(victimsInput->value());
+        incident.setAddress(addressInput->text().trimmed());
+        incident.setCode(codeInput->text().trimmed());
 
-        incident.description =
-            descriptionInput->toPlainText().trimmed();
+        incident.setDescription(descriptionInput->toPlainText().trimmed());
 
-        incident.status = statusInput->currentText();
+        incident.setStatus(statusInput->currentText());
     }
 
     void addIncident()
@@ -1451,12 +1450,12 @@ private:
         Incident incident;
 
         // Identifiant de 15 caractères.
-        incident.id = "INC-" + QString::fromLatin1(
+        incident.setId("INC-" + QString::fromLatin1(
                                    QUuid::createUuid()
                                        .toRfc4122()
                                        .toHex()
                                        .left(11)
-                                   ).toUpper();
+                                   ).toUpper());
 
         copyFormToIncident(incident);
 
@@ -1518,7 +1517,7 @@ private:
             this,
             "Confirmer l'archivage",
             QString("Archiver %1 ?")
-                .arg(incidentNumber(incident->id)),
+                .arg(incidentNumber(incident->getId())),
             QMessageBox::Yes | QMessageBox::No,
             QMessageBox::No
             );
@@ -1528,7 +1527,7 @@ private:
 
         QString erreur;
 
-        if (!Incident::archiver(incident->id, erreur)) {
+        if (!Incident::archiver(incident->getId(), erreur)) {
             showDatabaseError("Archivage impossible", erreur);
             return;
         }
@@ -1550,7 +1549,7 @@ private:
             return;
         }
 
-        const QString id = incident->id;
+        const QString id = incident->getId();
 
         const auto answer = QMessageBox::warning(
             this,
@@ -1585,26 +1584,26 @@ private:
             searchInput->text().trimmed();
 
         for (const Incident &incident : incidents) {
-            if (incident.archived)
+            if (incident.getArchived())
                 continue;
 
             if (
                 gravityFilter->currentIndex() > 0 &&
-                incident.gravity != gravityFilter->currentText()
+                incident.getGravity() != gravityFilter->currentText()
                 ) {
                 continue;
             }
 
             if (
                 !search.isEmpty() &&
-                !incident.code.contains(search, Qt::CaseInsensitive) &&
-                !incident.type.contains(
+                !incident.getCode().contains(search, Qt::CaseInsensitive) &&
+                !incident.getType().contains(
                     search, Qt::CaseInsensitive
                     ) &&
-                !incident.address.contains(
+                !incident.getAddress().contains(
                     search, Qt::CaseInsensitive
                     ) &&
-                !incidentNumber(incident.id).contains(
+                !incidentNumber(incident.getId()).contains(
                     search, Qt::CaseInsensitive
                     )
                 ) {
@@ -1625,19 +1624,19 @@ private:
                 const Incident *b
                 ) {
                 if (sorting == 1)
-                    return a->date < b->date;
+                    return a->getDate() < b->getDate();
 
                 if (sorting == 2) {
-                    return gravityRank(a->gravity)
-                    > gravityRank(b->gravity);
+                    return gravityRank(a->getGravity())
+                    > gravityRank(b->getGravity());
                 }
 
                 if (sorting == 3) {
-                    return gravityRank(a->gravity)
-                    < gravityRank(b->gravity);
+                    return gravityRank(a->getGravity())
+                    < gravityRank(b->getGravity());
                 }
 
-                return a->date > b->date;
+                return a->getDate() > b->getDate();
             }
             );
 
@@ -1686,12 +1685,12 @@ private:
                 *visible[static_cast<std::size_t>(row)];
 
             const QStringList values = {
-                incidentNumber(incident.id),
-                incident.type,
-                incident.address,
-                incident.gravity,
-                incident.status,
-                incident.code
+                incidentNumber(incident.getId()),
+                incident.getType(),
+                incident.getAddress(),
+                incident.getGravity(),
+                incident.getStatus(),
+                incident.getCode()
             };
 
             for (int column = 0; column < 6; ++column) {
@@ -1700,7 +1699,7 @@ private:
 
                 item->setData(
                     Qt::UserRole,
-                    incident.id
+                    incident.getId()
                     );
 
                 table->setItem(row, column, item);
@@ -1709,15 +1708,15 @@ private:
                     QColor background("#ffe9c3");
                     QColor foreground("#42383c");
 
-                    if (incident.gravity == "Critique") {
+                    if (incident.getGravity() == "Critique") {
                         background = QColor("#ffd8dc");
                         foreground = QColor("#9d1020");
                     } else if (
-                        incident.gravity == "Élevée"
+                        incident.getGravity() == "Élevée"
                         ) {
                         background = QColor("#ffe1e4");
                     } else if (
-                        incident.gravity == "Faible"
+                        incident.getGravity() == "Faible"
                         ) {
                         background = QColor("#d7f4df");
                         foreground = QColor("#176d37");
@@ -1767,7 +1766,7 @@ private:
             table->setCellWidget(row, 6, actions);
             table->setRowHeight(row, 36);
 
-            const QString id = incident.id;
+            const QString id = incident.getId();
 
             connect(
                 viewButton,
@@ -1818,8 +1817,8 @@ private:
 
         for (const Incident &incident : incidents) {
             if (
-                !incident.archived &&
-                incident.status != "Terminé" &&
+                !incident.getArchived() &&
+                incident.getStatus() != "Terminé" &&
                 calculatePriority(incident) == "Urgente"
                 ) {
                 urgent.push_back(&incident);
@@ -1848,10 +1847,10 @@ private:
                 QString(
                     "%1 — %2 — %3 — %4 victime(s)"
                     )
-                    .arg(incidentNumber(incident->id))
-                    .arg(incident->type)
-                    .arg(incident->address)
-                    .arg(incident->victims)
+                    .arg(incidentNumber(incident->getId()))
+                    .arg(incident->getType())
+                    .arg(incident->getAddress())
+                    .arg(incident->getVictims())
                 );
 
             details->setWordWrap(true);
@@ -1865,7 +1864,7 @@ private:
 
             urgentListLayout->addWidget(rowWidget);
 
-            const QString id = incident->id;
+            const QString id = incident->getId();
 
             connect(
                 button,
@@ -1897,14 +1896,14 @@ private:
     {
         for (const Incident &incident : incidents) {
             if (
-                incident.archived ||
-                incident.status == "Terminé" ||
+                incident.getArchived() ||
+                incident.getStatus() == "Terminé" ||
                 calculatePriority(incident) != "Urgente"
                 ) {
                 continue;
             }
 
-            displayIncident(incident.id);
+            displayIncident(incident.getId());
             return;
         }
     }
@@ -1923,25 +1922,25 @@ private:
         QMap<QString, int> byZone;
 
         for (const Incident &incident : incidents) {
-            if (incident.archived)
+            if (incident.getArchived())
                 continue;
 
             ++total;
-            ++byType[incident.type];
-            ++byGravity[incident.gravity];
-            ++byStatus[incident.status];
-            ++byZone[incident.address];
+            ++byType[incident.getType()];
+            ++byGravity[incident.getGravity()];
+            ++byStatus[incident.getStatus()];
+            ++byZone[incident.getAddress()];
 
-            if (incident.gravity == "Critique")
+            if (incident.getGravity() == "Critique")
                 ++critical;
 
-            if (incident.gravity == "Faible")
+            if (incident.getGravity() == "Faible")
                 ++low;
 
-            if (incident.status == "En cours")
+            if (incident.getStatus() == "En cours")
                 ++active;
 
-            if (incident.status == "Terminé")
+            if (incident.getStatus() == "Terminé")
                 ++finished;
         }
 
@@ -2419,7 +2418,7 @@ private:
                 if (ar != br)
                     return ar > br;
 
-                return a->date > b->date;
+                return a->getDate() > b->getDate();
             }
             );
 
@@ -2433,20 +2432,20 @@ private:
         QMap<QString, int> byZone;
 
         for (const Incident *incident : report) {
-            if (incident->status == "Signalé")
+            if (incident->getStatus() == "Signalé")
                 ++signaled;
-            else if (incident->status == "En cours")
+            else if (incident->getStatus() == "En cours")
                 ++inProgress;
-            else if (incident->status == "Terminé")
+            else if (incident->getStatus() == "Terminé")
                 ++finished;
 
-            victims += incident->victims;
+            victims += incident->getVictims();
 
-            ++byType[incident->type];
-            ++byZone[incident->address];
+            ++byType[incident->getType()];
+            ++byZone[incident->getAddress()];
 
             if (
-                incident->status != "Terminé" &&
+                incident->getStatus() != "Terminé" &&
                 calculatePriority(*incident) == "Urgente"
                 ) {
                 ++urgent;
@@ -2594,7 +2593,7 @@ td {
 
             for (const Incident *incident : report) {
                 if (
-                    incident->status == "Terminé" ||
+                    incident->getStatus() == "Terminé" ||
                     calculatePriority(*incident) != "Urgente"
                     ) {
                     continue;
@@ -2602,11 +2601,11 @@ td {
 
                 appendRow(
                     {
-                        incidentNumber(incident->id),
-                        incident->type,
-                        incident->address,
-                        QString::number(incident->victims),
-                        incident->status
+                        incidentNumber(incident->getId()),
+                        incident->getType(),
+                        incident->getAddress(),
+                        QString::number(incident->getVictims()),
+                        incident->getStatus()
                     },
                     " class='urgent'"
                     );
@@ -2649,15 +2648,15 @@ td {
 
             appendRow(
                 {
-                    incidentNumber(incident->id),
-                    incident->type,
-                    incident->date.toString(
+                    incidentNumber(incident->getId()),
+                    incident->getType(),
+                    incident->getDate().toString(
                         "dd/MM/yyyy HH:mm"
                         ),
-                    incident->address,
-                    incident->gravity,
-                    QString::number(incident->victims),
-                    incident->status,
+                    incident->getAddress(),
+                    incident->getGravity(),
+                    QString::number(incident->getVictims()),
+                    incident->getStatus(),
                     priority
                 },
                 rowClass
