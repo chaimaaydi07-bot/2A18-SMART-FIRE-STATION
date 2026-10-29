@@ -18,12 +18,32 @@ Equipement::Equipement(QString id, QString nom, QString type, QString marque, QS
     this->idVehicule = idVehicule;
 }
 
+// Les dates sont envoyées sous forme de texte puis converties par Oracle (TO_DATE).
+// Une date vide devient NULL dans la base.
+static QString texteDate(const QDate &d)
+{
+    return d.isValid() ? d.toString("yyyy-MM-dd") : QString();
+}
+
+// ======================================================= Étape 1 : AFFICHER
+static QVariant valeurVehicule(const QString &idVehicule)
+{
+    if (idVehicule.trimmed().isEmpty())
+        return QVariant(QMetaType::fromType<int>());   // NULL de type entier
+    return QVariant(idVehicule.trimmed().toInt());
+}
 QSqlQueryModel *Equipement::afficher()
 {
     QSqlQueryModel *model = new QSqlQueryModel();
-    model->setQuery("SELECT id_equipement, nom, type, marque, modele, quantite, etat, "
-                    "TO_CHAR(date_achat, 'YYYY-MM-DD'), TO_CHAR(date_entretien, 'YYYY-MM-DD'), "
+
+    // Les dates sont renvoyées en texte avec TO_CHAR pour être faciles à lire en C++.
+    model->setQuery("SELECT id_equipement, nom, type, marque, modele, "
+                    "quantite, etat, "
+                    "TO_CHAR(date_achat, 'YYYY-MM-DD'), "
+                    "TO_CHAR(date_entretien, 'YYYY-MM-DD'), "
                     "id_vehicule FROM EQUIPEMENT ORDER BY id_equipement");
+    while (model->canFetchMore())       // charger toutes les lignes
+        model->fetchMore();
 
     model->setHeaderData(0, Qt::Horizontal, QObject::tr("ID"));
     model->setHeaderData(1, Qt::Horizontal, QObject::tr("Nom"));
@@ -34,18 +54,25 @@ QSqlQueryModel *Equipement::afficher()
     model->setHeaderData(6, Qt::Horizontal, QObject::tr("État"));
     model->setHeaderData(7, Qt::Horizontal, QObject::tr("Date d'achat"));
     model->setHeaderData(8, Qt::Horizontal, QObject::tr("Date d'entretien"));
-    model->setHeaderData(9, Qt::Horizontal, QObject::tr("Vehicule"));
-    return model ;
+    model->setHeaderData(9, Qt::Horizontal, QObject::tr("Véhicule"));
+
+    erreur = model->lastError().isValid() ? model->lastError().text() : QString();
+    return model;
 }
+
+// ======================================================= Étape 2 : AJOUTER
 bool Equipement::ajouter()
 {
     QSqlQuery query;
-    query.prepare("INSERT INTO EQUIPEMENT (id_equipement, nom, type, marque,
-                  modele, "
+
+    // prepare() prend la requête en paramètre pour la préparer à l'exécution.
+    query.prepare("INSERT INTO EQUIPEMENT (id_equipement, nom, type, marque, modele, "
                   "quantite, etat, date_achat, date_entretien, id_vehicule) "
-                  "VALUES (:id, :nom, :type, :marque, :modele, :quantite,
-                  :etat, "
-                  "TO_DATE(:achat, 'YYYY-MM-DD'), TO_DATE(:entretien, 'YYYYMM-DD'), :vehicule)");
+                  "VALUES (:id, :nom, :type, :marque, :modele, :quantite, :etat, "
+                  "TO_DATE(:achat, 'YYYY-MM-DD'), TO_DATE(:entretien, 'YYYY-MM-DD'), "
+                  ":vehicule)");
+
+    // Création des variables liées (protection contre l'injection SQL)
     query.bindValue(":id", id);
     query.bindValue(":nom", nom);
     query.bindValue(":type", type);
@@ -53,13 +80,18 @@ bool Equipement::ajouter()
     query.bindValue(":modele", modele);
     query.bindValue(":quantite", quantite);
     query.bindValue(":etat", etat);
-    query.bindValue(":achat", dateAchat); // texte "2026-10-22"
-    query.bindValue(":entretien", dateEntretien);
-    query.bindValue(":vehicule", idVehicule.isEmpty() ? QVariant() :
-                                     idVehicule);
-    return query.exec();
+    query.bindValue(":achat", texteDate(dateAchat));
+    query.bindValue(":entretien", texteDate(dateEntretien));
+    // QVariant() envoie NULL : un équipement peut ne pas être dans un véhicule.
+    query.bindValue(":vehicule", valeurVehicule(idVehicule));
+
+    // exec() envoie la requête pour l'exécuter.
+    const bool ok = query.exec();
+    erreur = ok ? QString() : query.lastError().text();
+    return ok;
 }
 
+// ======================================================= Étape 3 : MODIFIER
 bool Equipement::modifier()
 {
     QSqlQuery query;
@@ -81,7 +113,7 @@ bool Equipement::modifier()
     query.bindValue(":etat", etat);
     query.bindValue(":achat", texteDate(dateAchat));
     query.bindValue(":entretien", texteDate(dateEntretien));
-    query.bindValue(":vehicule", idVehicule.isEmpty() ? QVariant() : QVariant(idVehicule));
+    query.bindValue(":vehicule", valeurVehicule(idVehicule));
     query.bindValue(":id", id);
 
     if (!query.exec()) {
@@ -92,12 +124,17 @@ bool Equipement::modifier()
     return query.numRowsAffected() > 0;   // faux si l'id n'existe pas
 }
 
-
+// ======================================================= Étape 4 : SUPPRIMER
 bool Equipement::supprimer(QString id)
 {
     QSqlQuery query;
     query.prepare("DELETE FROM EQUIPEMENT WHERE id_equipement = :id");
     query.bindValue(":id", id);
-    if (!query.exec()) return false;
+
+    if (!query.exec()) {
+        erreur = query.lastError().text();
+        return false;
+    }
+    erreur = QString();
     return query.numRowsAffected() > 0;
 }

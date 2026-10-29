@@ -12,6 +12,7 @@ class Equipement
     QString id, nom, type, marque, modele, etat, idVehicule;
     int quantite = 0;
     QDate dateAchat, dateEntretien;
+    QString erreur;
 
 public:
     // Constructeurs
@@ -42,6 +43,7 @@ public:
     void setDateAchat(QDate v) { dateAchat = v; }
     void setDateEntretien(QDate v) { dateEntretien = v; }
     void setIdVehicule(QString v) { idVehicule = v; }
+    QString derniereErreur() { return erreur; }
     // Fonctionnalités de base (CRUD)
     QSqlQueryModel *afficher();
     bool ajouter();

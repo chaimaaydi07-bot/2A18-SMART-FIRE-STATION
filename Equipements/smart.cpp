@@ -1,5 +1,6 @@
 #include "smart.h"
-#include "equipement.h"
+#include "equipement.h"          // couche Modèle : toutes les requêtes SQL
+#include <QSqlQueryModel>
 #include <QLabel>
 #include <QPixmap>
 #include <QComboBox>
@@ -72,8 +73,6 @@
 #include <QPageSize>
 #include <QPageLayout>
 #include <QMargins>
-#include <QSqlQueryModel>
-#include <QSqlQuery>
 
 // =====================================================================
 //  Colonnes du tableau
@@ -1559,6 +1558,37 @@ static void afficherStatistiques(QWidget *parent, QTableWidget *table, const QVe
     dlg->exec();
 }
 
+// =====================================================================
+//  Petits utilitaires de la vue liés à l'identifiant (colonne 0 du tableau).
+//  Le tableau étant le reflet de la table EQUIPEMENT, ils ne font aucune
+//  requête SQL : ils lisent seulement ce qui est déjà affiché.
+// =====================================================================
+
+// Numéro de ligne portant cet identifiant, -1 s'il n'est pas dans le tableau.
+static int ligneDeId(QTableWidget *table, const QString &id)
+{
+    for (int r = 0; r < table->rowCount(); r++)
+        if (table->item(r, 0) && table->item(r, 0)->text() == id)
+            return r;
+    return -1;
+}
+
+// Identifiant suivant, au format EQ-001, sans collision avec ceux déjà
+// présents dans la base (l'identifiant est la clé primaire de EQUIPEMENT).
+static QString prochainIdentifiant(QTableWidget *table)
+{
+    int maxNum = 0;
+    for (int r = 0; r < table->rowCount(); r++) {
+        if (!table->item(r, 0)) continue;
+        const QString id = table->item(r, 0)->text();
+        if (!id.startsWith("EQ-")) continue;
+        bool ok = false;
+        const int n = id.mid(3).toInt(&ok);
+        if (ok && n > maxNum) maxNum = n;
+    }
+    return QString("EQ-%1").arg(maxNum + 1, 3, 10, QChar('0'));
+}
+
 smart::smart(QWidget *parent)
     : QMainWindow(parent)
 {
@@ -2221,8 +2251,10 @@ smart::smart(QWidget *parent)
         "QHeaderView::section{background:#5b1722;color:white;font-weight:700;font-size:11px;"
         "border:none;border-right:1px solid #762834;padding:10px 5px;}");
 
-    // données de démonstration
+    // Les équipements viennent maintenant d'Oracle, plus des données écrites
+    // en dur : chargerDepuisBase() appelle Equipement::afficher().
     chargerDepuisBase();
+
     // message affiché quand le tableau est vide / sans résultat
     {
         QLabel *vide = new QLabel(table->viewport());
@@ -2596,7 +2628,58 @@ smart::smart(QWidget *parent)
 }
 
 // =====================================================================
-void smart::ajouterLigne(const QString &n, const QString &t, const QString &m,
+// =====================================================================
+//  Étape 1 du guide : AFFICHER
+//  Vide le tableau, relit la table EQUIPEMENT par Equipement::afficher()
+//  et recrée une ligne par enregistrement. Aucune requête SQL ici : la vue
+//  appelle seulement la méthode du Modèle.
+//
+//  Oracle renvoie les dates au format 'YYYY-MM-DD' (TO_CHAR) ; le tableau
+//  les affiche au format FMT ("dd/MM/yyyy"), d'où la conversion.
+// =====================================================================
+void smart::chargerDepuisBase()
+{
+    table->setRowCount(0);                       // 1. vider le tableau
+
+    Equipement eq;
+    QSqlQueryModel *m = eq.afficher();           // 2. lire la base
+
+    if (!eq.derniereErreur().isEmpty()) {
+        QMessageBox::critical(this, "Base de données",
+                              "Lecture des équipements impossible :\n" + eq.derniereErreur());
+        delete m;
+        return;
+    }
+
+    for (int r = 0; r < m->rowCount(); r++) {    // 3. une ligne par enregistrement
+        auto val = [&](int c) { return m->data(m->index(r, c)).toString(); };
+
+        // "YYYY-MM-DD" (Oracle)  ->  "dd/MM/yyyy" (tableau)
+        auto dateTableau = [&](int c) {
+            QDate d = QDate::fromString(val(c), "yyyy-MM-dd");
+            return d.isValid() ? d.toString(FMT) : QString();
+        };
+
+        ajouterLigne(val(0),                 // id_equipement
+                     val(1),                 // nom
+                     val(2),                 // type
+                     val(3),                 // marque
+                     val(4),                 // modele
+                     val(5).toInt(),         // quantite
+                     0,                      // seuil : pas encore dans la table EQUIPEMENT
+                     val(6),                 // etat
+                     QString(),              // localisation : pas encore dans la table
+                     dateTableau(7),         // date_achat
+                     dateTableau(8),         // date_entretien
+                     QString(),              // prochaine maintenance : pas encore dans la table
+                     QString());             // remarques : pas encore dans la table
+    }
+
+    delete m;                                    // 4. supprimer le modèle
+}
+
+// =====================================================================
+void smart::ajouterLigne(const QString &id, const QString &n, const QString &t, const QString &m,
                          const QString &mod, int q, int s, const QString &e,
                          const QString &loc, const QString &da, const QString &dm,
                          const QString &pm, const QString &rem)
@@ -2604,7 +2687,9 @@ void smart::ajouterLigne(const QString &n, const QString &t, const QString &m,
     int row = table->rowCount();
     table->insertRow(row);
 
-    table->setItem(row, 0, new QTableWidgetItem(QString("EQ-%1").arg(prochainId++, 3, 10, QChar('0'))));
+    // L'identifiant vient d'Oracle (colonne id_equipement), il n'est plus
+    // fabriqué par la vue : le tableau est le reflet de la table EQUIPEMENT.
+    table->setItem(row, 0, new QTableWidgetItem(id));
     table->setItem(row, 1, new QTableWidgetItem(n));
     table->setItem(row, 2, new QTableWidgetItem(t));
     table->setItem(row, 3, new NumItem(QString::number(q)));
@@ -2777,6 +2862,7 @@ void smart::ajouter()
     seuil->setValue(2);
     type->setCurrentIndex(0);
 }
+
 // =====================================================================
 void smart::modifier()
 {
@@ -2875,6 +2961,7 @@ void smart::modifier()
     else
         toast(this, "✓  Équipement modifié");
 }
+
 // =====================================================================
 void smart::rechercher()
 {
@@ -3870,29 +3957,5 @@ void smart::appliquerTheme(bool sombre)
     for (QWidget *w : findChildren<QWidget *>())
         w->update();
     update();
-}
-
-void smart::chargerDepuisBase()
-{
-    table->setRowCount(0);                       // 1. vider le tableau
-
-    Equipement e;
-    QSqlQueryModel *m = e.afficher();            // 2. lire la base
-
-    for (int r = 0; r < m->rowCount(); ++r) {    // 3. une ligne par enregistrement
-        ajouterLigne(
-            m->data(m->index(r, 0)).toString(),  // id
-            m->data(m->index(r, 1)).toString(),  // nom
-            m->data(m->index(r, 2)).toString(),  // type
-            m->data(m->index(r, 3)).toString(),  // marque
-            m->data(m->index(r, 4)).toString(),  // modèle
-            m->data(m->index(r, 5)).toString(),  // quantité
-            m->data(m->index(r, 6)).toString(),  // état
-            m->data(m->index(r, 7)).toString(),  // date achat
-            m->data(m->index(r, 8)).toString(),  // date entretien
-            m->data(m->index(r, 9)).toString()   // véhicule
-            );
-    }
-    delete m;                                    // 4. supprimer le modèle
 }
 

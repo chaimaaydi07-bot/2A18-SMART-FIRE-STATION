@@ -27,8 +27,10 @@ private slots:
     void trier();
 
 private:
+    // Recharge le tableau depuis Oracle (appelle Equipement::afficher()).
+    // Appelée au démarrage et après chaque ajout, modification ou suppression.
     void chargerDepuisBase();
-    void ajouterLigne(const QString &n, const QString &t, const QString &m,
+    void ajouterLigne(const QString &id, const QString &n, const QString &t, const QString &m,
                       const QString &mod, int q, int s, const QString &e,
                       const QString &loc, const QString &da, const QString &dm,
                       const QString &pm, const QString &rem);
@@ -62,8 +64,6 @@ private:
     QComboBox    *triCombo;
     QComboBox    *filtreType;
     QTableWidget *table;
-
-    int prochainId = 1;
 
     // journal d'activité : [date/heure, action, équipement, détails, utilisateur]
     QVector<QStringList> journal;
