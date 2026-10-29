@@ -3,30 +3,49 @@
 #include <QSqlError>
 #include <QDebug>
 
-Connection::Connection() {}
+static QString g_erreur;
+
+Connection::Connection()
+    : db(QSqlDatabase::addDatabase("QODBC"))
+{}
+
+Connection::~Connection() { closeConnection(); }
+
+Connection& Connection::createInstance()
+{
+    static Connection instance;
+    return instance;
+}
+
+QString Connection::derniereErreur() { return g_erreur; }
 
 // Connexion Oracle via ODBC.
 // 1) Creez la source ODBC (voir README) et notez son nom -> NOM_SOURCE_ODBC
 // 2) Remplacez l'utilisateur et le mot de passe par ceux de votre schema Oracle.
 bool Connection::createConnection()
 {
-    const QString NOM_SOURCE_ODBC = "projet2A";
-    const QString UTILISATEUR     = "linda";
-    const QString MOT_DE_PASSE    = "lindaa";
-
-    QSqlDatabase db = QSqlDatabase::addDatabase("QODBC");
-    db.setDatabaseName(NOM_SOURCE_ODBC);
-    db.setUserName(UTILISATEUR);
-    db.setPassword(MOT_DE_PASSE);
-
-    if (!db.open()) {
-        qDebug() << "Connexion Oracle echouee :" << db.lastError().text();
+    g_erreur.clear();
+    if (!QSqlDatabase::drivers().contains("QODBC")) {
+        g_erreur = "Pilote Qt QODBC indisponible. Pilotes detectes : "
+                   + QSqlDatabase::drivers().join(", ");
         return false;
     }
+    if (db.isOpen()) return true;
+
+    db.setDatabaseName(qEnvironmentVariable("SMARTFIRE_ODBC_DSN", "SmartFireStation"));
+    db.setUserName(qEnvironmentVariable("SMARTFIRE_DB_USER", "smartfire"));
+    db.setPassword(qEnvironmentVariable("SMARTFIRE_DB_PASSWORD", "smartfire2026"));
+
+    if (!db.open()) {
+        g_erreur = db.lastError().text();
+        qDebug() << "Connexion Oracle ODBC echouee :" << g_erreur;
+        return false;
+    }
+    qDebug() << "Connexion Oracle ODBC etablie :" << db.databaseName();
     return true;
 }
 
 void Connection::closeConnection()
 {
-    QSqlDatabase::database().close();
+    if (db.isValid() && db.isOpen()) db.close();
 }
