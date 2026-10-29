@@ -9,6 +9,106 @@ Incident::Incident()
 {
 }
 
+QString Incident::getId() const
+{
+    return id;
+}
+
+void Incident::setId(const QString & valeur)
+{
+    id = valeur;
+}
+
+QString Incident::getCode() const
+{
+    return code;
+}
+
+void Incident::setCode(const QString & valeur)
+{
+    code = valeur;
+}
+
+QString Incident::getType() const
+{
+    return type;
+}
+
+void Incident::setType(const QString & valeur)
+{
+    type = valeur;
+}
+
+QDateTime Incident::getDate() const
+{
+    return date;
+}
+
+void Incident::setDate(const QDateTime & valeur)
+{
+    date = valeur;
+}
+
+QString Incident::getAddress() const
+{
+    return address;
+}
+
+void Incident::setAddress(const QString & valeur)
+{
+    address = valeur;
+}
+
+QString Incident::getGravity() const
+{
+    return gravity;
+}
+
+void Incident::setGravity(const QString & valeur)
+{
+    gravity = valeur;
+}
+
+int Incident::getVictims() const
+{
+    return victims;
+}
+
+void Incident::setVictims(int valeur)
+{
+    victims = valeur;
+}
+
+QString Incident::getDescription() const
+{
+    return description;
+}
+
+void Incident::setDescription(const QString & valeur)
+{
+    description = valeur;
+}
+
+QString Incident::getStatus() const
+{
+    return status;
+}
+
+void Incident::setStatus(const QString & valeur)
+{
+    status = valeur;
+}
+
+bool Incident::getArchived() const
+{
+    return archived;
+}
+
+void Incident::setArchived(bool valeur)
+{
+    archived = valeur;
+}
+
 // Exécuter une écriture avec une requête préparée.
 bool Incident::executer(const QString &sql,
                         const QVariantList &valeurs,
