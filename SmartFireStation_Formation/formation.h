@@ -52,7 +52,7 @@ public:
     QSqlQueryModel* trier(const QString &colonne, bool croissant = true);
     QMap<QString,int> statistiquesParType();
     bool existe(int id);
-    bool enregistrerPresence(int idFormation, int idPompier);
+    bool enregistrerPresence(int idFormation, int idAgent);
     int  nbInscrits(int idFormation);
 
 private:
