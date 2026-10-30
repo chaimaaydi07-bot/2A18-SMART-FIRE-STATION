@@ -1,7 +1,16 @@
+// PLAN DU MODULE :
+// - vehicules.cpp      : actions (charger, ajouter, modifier, supprimer, rechercher).
+// - vehicules_view.cpp : construction de l'interface et des fenetres.
+// - vehiculerepository.cpp : requetes SQL vers Oracle.
+// - vehicules_utils.h  : noms des colonnes et fonctions partagees.
 #ifndef VEHICULES_H
 #define VEHICULES_H
 #include <QMainWindow>
 #include <QString>
+#include <QDate>
+#include <QPair>
+#include <QVector>
+struct VehiculeRecord;
 class QLineEdit;
 class QComboBox;
 class QSpinBox;
@@ -21,16 +30,23 @@ private slots:
     void rechercher();
     void trier();
 private:
+    // Vue : ces fonctions sont definies dans vehicules_view.cpp.
     void appliquerStyle();
+    void creerChampsFormulaire();
+    QWidget *creerEntete();
+    QWidget *creerListeVehicules();
+    QWidget *creerNotifications();
+
+    // Actions et donnees : vehicules.cpp.
     bool chargerDepuisBase();
+    VehiculeRecord lireFormulaire() const;
+    void selectionnerVehicule(const QString &id);
     bool sauvegarder(bool modification);
     bool supprimerVehicule(const QString &id);
-    QString ajouterLigne(const QString &n, const QString &t, const QString &m,
-                         const QString &mod, int q, int s, const QString &e,
-                         const QString &loc, const QString &da, const QString &dm,
-                         const QString &pm, const QString &rem,
-                         const QString &id, const QString &km, const QString &disponibilite);
-    void chargerFormulaire(int r);
+    bool planifierMaintenances(const QVector<QPair<QString, QDate>> &dates, QString &erreur);
+
+    // Affichage du tableau et des fenetres : vehicules_view.cpp.
+    void ajouterLigne(const VehiculeRecord &vehicule);
     void colorierLignes();
     void afficherAlertes(bool afficherSiVide);
     void majCartes();
@@ -39,24 +55,30 @@ private:
     void afficherDetailsVehicule(int ligne);
     void afficherMaintenances();
     void majTableauxDashboard();
-    QLineEdit *nom;
-    QComboBox *type;
-    QLineEdit *marque;
-    QLineEdit *modele;
-    QSpinBox *quantite;
-    QSpinBox *seuil;
-    QComboBox *etat;
-    QLineEdit *localisation;
-    QDateEdit *dateAchat;
-    QDateEdit *dateMaintenance;
-    QDateEdit *prochaineMaintenance;
-    QLineEdit *remarques;
-    QLineEdit *recherche;
-    QComboBox *triCombo;
-    QComboBox *filtreType;
-    QTableWidget *table;
+
+    // Champs du formulaire.
+    QLineEdit *champMatricule = nullptr;
+    QComboBox *type = nullptr;
+    QLineEdit *marque = nullptr;
+    QLineEdit *modele = nullptr;
+    QSpinBox *champCarburant = nullptr;
+    QSpinBox *seuil = nullptr;
+    QComboBox *etat = nullptr;
+    QLineEdit *localisation = nullptr;
+    QDateEdit *dateAchat = nullptr;
+    QDateEdit *dateDernierEntretien = nullptr;
+    QDateEdit *dateProchainEntretien = nullptr;
+    QLineEdit *remarques = nullptr;
+    QLineEdit *champKilometrage = nullptr;
+    QComboBox *disponibilite = nullptr;
+
+    // Recherche, tri et tableau principal.
+    QLineEdit *champRecherche = nullptr;
+    QComboBox *choixTri = nullptr;
+    QComboBox *filtreType = nullptr;
+    QTableWidget *tableauVehicules = nullptr;
+
+    // Zone des notifications.
     QVBoxLayout *alertesRecentesLayout = nullptr;
-    QLineEdit *kilometrage;
-    QComboBox *disponibilite;
 };
-#endif 
+#endif
