@@ -81,4 +81,4 @@ private:
     // Zone des notifications.
     QVBoxLayout *alertesRecentesLayout = nullptr;
 };
-#endif 
+#endif

@@ -15,7 +15,7 @@ namespace {
 bool verifierVehicule(const VehiculeRecord &vehicule, QString &erreur)
 {
     bool textesValides = !vehicule.matricule.trimmed().isEmpty()
-        && vehicule.matricule.size() <= 20
+    && vehicule.matricule.size() <= 20
         && !vehicule.type.isEmpty() && vehicule.type.size() <= 40
         && vehicule.marque.size() <= 50 && vehicule.modele.size() <= 50
         && vehicule.localisation.size() <= 100 && vehicule.remarques.size() <= 1000
@@ -27,8 +27,8 @@ bool verifierVehicule(const VehiculeRecord &vehicule, QString &erreur)
     }
 
     bool nombresValides = vehicule.carburant >= 0 && vehicule.carburant <= 100
-        && vehicule.seuil >= 0 && vehicule.seuil <= 100
-        && vehicule.kilometrage >= 0 && vehicule.kilometrage <= 9999999999LL;
+                          && vehicule.seuil >= 0 && vehicule.seuil <= 100
+                          && vehicule.kilometrage >= 0 && vehicule.kilometrage <= 9999999999LL;
     if (!nombresValides) {
         erreur = "Le carburant doit être entre 0 et 100 %, et le kilométrage positif ou nul.";
         return false;
@@ -111,8 +111,8 @@ bool VehiculeRepository::charger(QVector<VehiculeRecord> &records, QString &erre
     }
     QSqlQuery requete(base);
     if (!requete.exec("SELECT id_vehicule AS id, matricule, type, marque, modele, carburant, seuil_carburant, etat, "
-                    "localisation, date_achat, date_derniere_entretien, date_prochaine_entretien, "
-                    "remarques, kilometrage, disponibilite FROM VEHICULE ORDER BY id_vehicule")) {
+                      "localisation, date_achat, date_derniere_entretien, date_prochaine_entretien, "
+                      "remarques, kilometrage, disponibilite FROM VEHICULE ORDER BY id_vehicule")) {
         erreur = messageErreur(requete.lastError());
         return false;
     }
@@ -195,13 +195,13 @@ bool VehiculeRepository::enregistrer(VehiculeRecord &vehicule, bool modification
     QString sql;
     if (modification) {
         sql = "UPDATE VEHICULE SET matricule=?, type=?, marque=?, modele=?, carburant=?, seuil_carburant=?, "
-          "etat=?, localisation=?, date_achat=TO_DATE(?,'YYYY-MM-DD'), "
-          "date_derniere_entretien=TO_DATE(?,'YYYY-MM-DD'), date_prochaine_entretien=TO_DATE(?,'YYYY-MM-DD'), "
-          "remarques=?, kilometrage=?, disponibilite=? WHERE id_vehicule=?";
+              "etat=?, localisation=?, date_achat=TO_DATE(?,'YYYY-MM-DD'), "
+              "date_derniere_entretien=TO_DATE(?,'YYYY-MM-DD'), date_prochaine_entretien=TO_DATE(?,'YYYY-MM-DD'), "
+              "remarques=?, kilometrage=?, disponibilite=? WHERE id_vehicule=?";
     } else {
         sql = "INSERT INTO VEHICULE (matricule,type,marque,modele,carburant,seuil_carburant,etat,localisation,"
-          "date_achat,date_derniere_entretien,date_prochaine_entretien,remarques,kilometrage,disponibilite,id_vehicule) "
-          "VALUES (?,?,?,?,?,?,?,?,TO_DATE(?,'YYYY-MM-DD'),TO_DATE(?,'YYYY-MM-DD'),TO_DATE(?,'YYYY-MM-DD'),?,?,?,?)";
+              "date_achat,date_derniere_entretien,date_prochaine_entretien,remarques,kilometrage,disponibilite,id_vehicule) "
+              "VALUES (?,?,?,?,?,?,?,?,TO_DATE(?,'YYYY-MM-DD'),TO_DATE(?,'YYYY-MM-DD'),TO_DATE(?,'YYYY-MM-DD'),?,?,?,?)";
     }
 
     bool requeteReussie = executer(requete, sql, valeurs, erreur);
@@ -248,8 +248,8 @@ bool VehiculeRepository::planifier(const QVector<QPair<QString, QDate>> &dates, 
             return terminerTransaction(base, requete, false, erreur);
         }
         if (!executer(requete, "UPDATE VEHICULE SET date_prochaine_entretien=TO_DATE(?,'YYYY-MM-DD') "
-                     "WHERE id_vehicule=? AND (date_derniere_entretien IS NULL OR date_derniere_entretien<TO_DATE(?,'YYYY-MM-DD'))",
-                     {dateSql(date.second), date.first, dateSql(date.second)}, erreur)) {
+                               "WHERE id_vehicule=? AND (date_derniere_entretien IS NULL OR date_derniere_entretien<TO_DATE(?,'YYYY-MM-DD'))",
+                      {dateSql(date.second), date.first, dateSql(date.second)}, erreur)) {
             return terminerTransaction(base, requete, false, erreur);
         }
         if (requete.numRowsAffected() == 0) {

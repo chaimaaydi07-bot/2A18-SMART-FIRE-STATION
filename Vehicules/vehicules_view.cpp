@@ -1642,7 +1642,7 @@ void vehicules::majTableauxDashboard()
             rl->setSpacing(10);
             QLabel *icon = new QLabel;
             icon->setPixmap(style()->standardIcon(information ? QStyle::SP_MessageBoxInformation
-                                                             : QStyle::SP_MessageBoxWarning).pixmap(24, 24));
+                                                              : QStyle::SP_MessageBoxWarning).pixmap(24, 24));
             icon->setFixedSize(28, 28);
             icon->setAlignment(Qt::AlignCenter);
             rl->addWidget(icon);
@@ -1651,7 +1651,7 @@ void vehicules::majTableauxDashboard()
             QLabel *title = new QLabel(a.title);
             title->setObjectName("notificationTitle");
             QLabel *detail = new QLabel(a.detail + (a.date == "État actuel" ? QString()
-                                                     : " — Prévue le " + a.date));
+                                                                            : " — Prévue le " + a.date));
             detail->setObjectName("notificationDetail");
             detail->setWordWrap(true);
             texts->addWidget(title);
@@ -2339,4 +2339,3 @@ void vehicules::afficherMaintenancePredictive()
     fondu(dlg);
     dlg->exec();
 }
-
