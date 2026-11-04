@@ -28,7 +28,7 @@ BEGIN
         EXECUTE IMMEDIATE 'DROP TABLE ' || t.table_name || ' CASCADE CONSTRAINTS';
     END LOOP;
     FOR s IN (SELECT sequence_name FROM user_sequences
-              WHERE sequence_name IN ('SEQ_VEHICULE_ID', 'SEQ_FORMATION_ID')) LOOP
+              WHERE sequence_name IN ('SEQ_AGENT_ID', 'SEQ_VEHICULE_ID', 'SEQ_FORMATION_ID')) LOOP
         EXECUTE IMMEDIATE 'DROP SEQUENCE ' || s.sequence_name;
     END LOOP;
 END;
@@ -41,7 +41,7 @@ END;
 
 -- --------------------------- Module Gestion du personnel (Chaima) -----------
 CREATE TABLE AGENT (
-    id_agent        VARCHAR2(15)   CONSTRAINT pk_agent PRIMARY KEY,
+    id_agent        NUMBER(10)     CONSTRAINT pk_agent PRIMARY KEY,   -- auto-incrément (trigger), jamais saisi
     nom             VARCHAR2(50)   NOT NULL,
     prenom          VARCHAR2(50)   NOT NULL,
     poste           VARCHAR2(40)   NOT NULL
@@ -53,7 +53,7 @@ CREATE TABLE AGENT (
             'Adjudant', 'Lieutenant', 'Capitaine')),
     specialite      VARCHAR2(50),
     telephone       VARCHAR2(20)   CONSTRAINT uq_agent_tel UNIQUE,
-    cin             VARCHAR2(8)    CONSTRAINT uq_agent_cin UNIQUE
+    cin             VARCHAR2(8)    NOT NULL CONSTRAINT uq_agent_cin UNIQUE   -- identifiant visible, sert à la recherche
         CONSTRAINT ck_agent_cin CHECK (REGEXP_LIKE(cin, '^[0-9]{8}$')),
     disponibilite   VARCHAR2(20)   DEFAULT 'Disponible' NOT NULL
         CONSTRAINT ck_agent_dispo CHECK (disponibilite IN ('Disponible', 'En intervention',
@@ -140,7 +140,7 @@ CREATE TABLE EQUIPEMENT (
     quantite         NUMBER(6)     DEFAULT 0 NOT NULL
         CONSTRAINT ck_equipement_qte CHECK (quantite >= 0),
     etat             VARCHAR2(20)  DEFAULT 'Disponible' NOT NULL
-        CONSTRAINT ck_equipement_etat CHECK (etat IN ('Disponible', 'En maintenance', 'Hors service')),
+        CONSTRAINT ck_equipement_etat CHECK (etat IN ('Disponible', 'En mission', 'En maintenance', 'Hors service')),
     date_achat       DATE,
     date_entretien   DATE,
     id_vehicule      NUMBER(10)
@@ -159,7 +159,7 @@ CREATE TABLE EQUIPEMENT (
 
 -- INTERVENIR (AGENT 0,n — 1,n INCIDENT)
 CREATE TABLE INTERVENTION (
-    id_agent      VARCHAR2(15)
+    id_agent      NUMBER(10)
         CONSTRAINT fk_intervention_agent REFERENCES AGENT(id_agent) ON DELETE CASCADE,
     id_incident   VARCHAR2(15)
         CONSTRAINT fk_intervention_incident REFERENCES INCIDENT(id_incident) ON DELETE CASCADE,
@@ -177,7 +177,7 @@ CREATE TABLE MOBILISATION (
 
 -- INSCRIRE (AGENT 0,n — 1,n FORMATION) avec les attributs de l'association
 CREATE TABLE INSCRIRE (
-    id_agent            VARCHAR2(15)
+    id_agent            NUMBER(10)
         CONSTRAINT fk_inscrire_agent REFERENCES AGENT(id_agent) ON DELETE CASCADE,
     id                  NUMBER(10)
         CONSTRAINT fk_inscrire_formation REFERENCES FORMATION(id) ON DELETE CASCADE,
@@ -195,9 +195,19 @@ CREATE TABLE INSCRIRE (
 -- ============================================================================
 -- 3. INCRÉMENTATION AUTOMATIQUE DES IDENTIFIANTS NUMÉRIQUES
 --    (Oracle 11g n'a pas de colonne IDENTITY : séquence + trigger)
---    AGENT, INCIDENT et EQUIPEMENT : identifiant texte (AGT-001, INC-…)
---    généré par l'application.
+--    INCIDENT et EQUIPEMENT : identifiant texte (INC-…, EQ-…) généré par l'application.
 -- ============================================================================
+CREATE SEQUENCE seq_agent_id START WITH 1 INCREMENT BY 1 NOCYCLE;
+
+CREATE OR REPLACE TRIGGER trg_agent_id
+BEFORE INSERT ON AGENT
+FOR EACH ROW
+WHEN (NEW.id_agent IS NULL)
+BEGIN
+    SELECT seq_agent_id.NEXTVAL INTO :NEW.id_agent FROM DUAL;
+END;
+/
+
 CREATE SEQUENCE seq_vehicule_id START WITH 1 INCREMENT BY 1 NOCYCLE;
 
 CREATE OR REPLACE TRIGGER trg_vehicule_id

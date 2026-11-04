@@ -1,6 +1,7 @@
 #include "pageconnexion.h"
 #include "logoanime.h"
 
+#include <QRegularExpressionValidator>
 #include <QCheckBox>
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -203,17 +204,18 @@ PageConnexion::PageConnexion(QWidget *parent) : QWidget(parent)
     auto *titreC = new QLabel("Connexion");
     titreC->setObjectName("titreConnexion");
     lc->addWidget(titreC);
-    auto *aide = new QLabel("Utilisez votre identifiant d'agent et votre mot de passe.");
+    auto *aide = new QLabel("Utilisez votre CIN et votre mot de passe.");
     aide->setObjectName("aide");
     aide->setWordWrap(true);
     lc->addWidget(aide);
     lc->addSpacing(14);
 
-    auto *e1 = new QLabel("Identifiant d'agent");
+    auto *e1 = new QLabel("CIN");
     e1->setObjectName("etiquette");
     lc->addWidget(e1);
     edIdentifiant = new QLineEdit;
-    edIdentifiant->setPlaceholderText("ex. AGT-018");
+    edIdentifiant->setPlaceholderText("8 chiffres");
+    edIdentifiant->setValidator(new QRegularExpressionValidator(QRegularExpression("[0-9]{0,8}"), edIdentifiant));
     lc->addWidget(edIdentifiant);
     lc->addSpacing(10);
 
@@ -362,7 +364,7 @@ void PageConnexion::seConnecter()
     const QString id  = edIdentifiant->text().trimmed().toUpper();
     const QString mdp = edMdp->text();
     if (id.isEmpty() || mdp.isEmpty()) {
-        lblErreur->setText("Veuillez saisir votre identifiant et votre mot de passe.");
+        lblErreur->setText("Veuillez saisir votre CIN et votre mot de passe.");
         return;
     }
 
@@ -384,7 +386,7 @@ void PageConnexion::seConnecter()
         bloquer();
         return;
     }
-    lblErreur->setText(QString("Identifiant ou mot de passe incorrect. Tentative %1 sur %2.")
+    lblErreur->setText(QString("CIN ou mot de passe incorrect. Tentative %1 sur %2.")
                            .arg(m_echecs).arg(MAX_TENTATIVES));
 }
 
@@ -408,7 +410,7 @@ void PageConnexion::motDePasseOublie()
     // 1) Identifiant de l'agent
     bool ok = false;
     const QString id = QInputDialog::getText(this, "Mot de passe oublié",
-                                             "Saisissez votre identifiant d'agent (ex. AGT-018) :",
+                                             "Saisissez votre CIN (8 chiffres) :",
                                              QLineEdit::Normal, edIdentifiant->text().trimmed(), &ok)
                            .trimmed().toUpper();
     if (!ok || id.isEmpty()) return;
@@ -418,7 +420,7 @@ void PageConnexion::motDePasseOublie()
         if (c.identifiant.compare(id, Qt::CaseInsensitive) == 0) compte = &c;
     if (!compte || compte->tel.trimmed().isEmpty()) {
         QMessageBox::warning(this, "Mot de passe oublié",
-                             "Identifiant inconnu ou aucun numéro de téléphone enregistré.\n"
+                             "CIN inconnu ou aucun numéro de téléphone enregistré.\n"
                              "Contactez le Responsable RH.");
         return;
     }
@@ -544,11 +546,11 @@ void PageConnexion::demanderCompte()
     auto *edNomComplet = new QLineEdit;
     edNomComplet->setPlaceholderText("ex. Sassi Mohamed");
     auto *edIdAgent = new QLineEdit;
-    edIdAgent->setPlaceholderText("ex. AGT-019 (si vous le connaissez)");
+    edIdAgent->setPlaceholderText("8 chiffres");
     auto *edPoste = new QLineEdit;
     edPoste->setPlaceholderText("ex. Dispatcher");
     form->addRow("Nom et prénom *", edNomComplet);
-    form->addRow("Identifiant d'agent", edIdAgent);
+    form->addRow("CIN", edIdAgent);
     form->addRow("Poste", edPoste);
     v->addLayout(form);
 

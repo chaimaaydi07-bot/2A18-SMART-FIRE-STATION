@@ -14,7 +14,7 @@ class QTimer;
 // Un compte utilisateur = un employé (agent) qui a un mot de passe.
 // Le rôle correspond au poste de l'agent (Responsable RH, Chef de caserne...).
 struct Compte {
-    QString identifiant;   // ID de l'agent, ex. AGT-018
+    QString identifiant;   // CIN de l'agent (8 chiffres)
     QString nom;           // nom affiché, ex. Mansouri Leila
     QString role;          // poste de l'agent
     QString mdpHash;       // mot de passe chiffré (SHA-256), jamais en clair

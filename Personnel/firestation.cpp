@@ -35,6 +35,7 @@
 #include <QEvent>
 #include <QPdfWriter>
 #include <QPointer>
+#include <QProgressBar>
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -78,7 +79,7 @@ const QStringList SPECIALITES = {"Sauvetage-déblaiement", "Recherche cynophile"
                                  "Lutte contre l'incendie"};
 const QStringList DISPOS = {"Disponible", "En intervention", "En formation", "En repos", "En congé"};
 // Critères différents pour la recherche et pour le tri
-const QStringList CRITERES_RECHERCHE = {"Nom", "Téléphone", "Certification"};
+const QStringList CRITERES_RECHERCHE = {"CIN", "Nom", "Téléphone", "Certification"};
 const QStringList CRITERES_TRI       = {"Disponibilité", "Grade", "Spécialité"};
 
 // Noms des certifications (identiques dans les fiches agents et le catalogue)
@@ -245,6 +246,54 @@ void changerPageEnFondu(QStackedWidget *pages, const std::function<void()> &chan
 
 // Confirmation visuelle : la ligne de l'agent ajouté ou modifié s'allume en
 // orange clair, puis revient doucement à sa couleur normale.
+// Icônes des actions du tableau, dessinées en vectoriel (nettes sur tous les écrans)
+QIcon iconeAction(const QString &type, const QColor &couleur)
+{
+    QPixmap pm(40, 40);
+    pm.setDevicePixelRatio(2.0);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    QPen pen(couleur, 1.7, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    p.setPen(pen);
+    p.setBrush(Qt::NoBrush);
+    if (type == "voir") {                       // œil
+        QPainterPath oeil;
+        oeil.moveTo(2, 10);
+        oeil.quadTo(10, 2, 18, 10);
+        oeil.quadTo(10, 18, 2, 10);
+        p.drawPath(oeil);
+        p.setBrush(couleur);
+        p.drawEllipse(QPointF(10, 10), 2.6, 2.6);
+    } else if (type == "modifier") {            // crayon
+        p.save();
+        p.translate(10, 10);
+        p.rotate(-45);
+        p.drawRect(QRectF(-6.5, -2.4, 11, 4.8));
+        QPainterPath pointe;
+        pointe.moveTo(4.5, -2.4);
+        pointe.lineTo(8.5, 0);
+        pointe.lineTo(4.5, 2.4);
+        p.drawPath(pointe);
+        p.restore();
+        p.drawLine(QPointF(3, 17.5), QPointF(17, 17.5));
+    } else {                                    // corbeille
+        p.drawLine(QPointF(3.5, 5), QPointF(16.5, 5));
+        p.drawLine(QPointF(8, 5), QPointF(8.5, 2.8));
+        p.drawLine(QPointF(8.5, 2.8), QPointF(11.5, 2.8));
+        p.drawLine(QPointF(11.5, 2.8), QPointF(12, 5));
+        QPainterPath bac;
+        bac.moveTo(5, 5);
+        bac.lineTo(6, 17.5);
+        bac.lineTo(14, 17.5);
+        bac.lineTo(15, 5);
+        p.drawPath(bac);
+        p.drawLine(QPointF(8.5, 8), QPointF(8.8, 14.5));
+        p.drawLine(QPointF(11.5, 8), QPointF(11.2, 14.5));
+    }
+    return QIcon(pm);
+}
+
 void surlignerLigne(QTableWidget *t, const QString &id)
 {
     int ligne = -1;
@@ -253,7 +302,7 @@ void surlignerLigne(QTableWidget *t, const QString &id)
     if (ligne < 0) return;
     t->scrollToItem(t->item(ligne, 0));
 
-    const int nbCol = 6;   // colonnes texte (la colonne Action contient des boutons)
+    const int nbCol = t->columnCount() - 1;   // colonnes texte (la dernière contient les icônes)
     QList<QColor> origine;
     for (int c = 0; c < nbCol; ++c) {
         const QBrush b = t->item(ligne, c)->background();
@@ -557,10 +606,10 @@ QTableWidget::item:hover { background: #fff1f2; }
 QHeaderView::section { color: white; background: #5b1722; border: none;
     border-right: 1px solid #762834; padding: 12px 5px; font-size: 11px; font-weight: 700; }
 QToolButton#tableAction { color: #9e1724; background: #fff4f5; border: 1px solid #efc9cd;
-    border-radius: 7px; padding: 5px 8px; }
+    border-radius: 7px; padding: 3px; }
 QToolButton#tableAction:hover { background: #f6d6da; }
 QToolButton#tableDelete { color: white; background: #8f1420; border: 1px solid #74101a;
-    border-radius: 7px; padding: 5px 8px; }
+    border-radius: 7px; padding: 3px; }
 QToolButton#tableDelete:hover { background: #c1121f; }
 #alerte { background: #fff5f4; border: 2px solid #f2c7c2; border-radius: 14px; }
 #alerteInfo { background: #f3f8fd; border: 2px solid #c9dcf2; border-radius: 14px; }
@@ -916,7 +965,7 @@ QWidget *FireStation::creerListe()
     cbCritere->addItems(CRITERES_RECHERCHE);
     rf->addWidget(cbCritere);
     edRecherche = new QLineEdit;
-    edRecherche->setPlaceholderText("Saisir le nom…");
+    edRecherche->setPlaceholderText("Saisir le CIN…");
     cbFiltrePoste = new QComboBox;
     cbFiltrePoste->addItem("Tous les postes");
     cbFiltrePoste->addItems(POSTES);
@@ -927,9 +976,11 @@ QWidget *FireStation::creerListe()
     rf->addWidget(cbTri);
     l->addLayout(rf);
 
-    tblAgents = new QTableWidget(0, 7);
-    tblAgents->setHorizontalHeaderLabels({"ID", "NOM", "POSTE", "GRADE", "SPÉCIALITÉ",
-                                          "DISPONIBILITÉ", "ACTION"});
+    // id_agent (clé primaire) n'est pas affiché : l'utilisateur identifie l'agent par son CIN
+    // Toutes les informations sont affichées, regroupées sur deux lignes par case
+    tblAgents = new QTableWidget(0, 6);
+    tblAgents->setHorizontalHeaderLabels({"CIN", "AGENT", "POSTE · GRADE · SPÉCIALITÉ",
+                                          "CERTIFICATION", "DISPONIBILITÉ", "ACTIONS"});
     tblAgents->verticalHeader()->hide();
     tblAgents->setShowGrid(true);
     new CoinsArrondis(tblAgents, 10);
@@ -939,10 +990,10 @@ QWidget *FireStation::creerListe()
     tblAgents->setMouseTracking(true);
     tblAgents->setEditTriggers(QAbstractItemView::NoEditTriggers);
     tblAgents->setSelectionBehavior(QAbstractItemView::SelectRows);
+    tblAgents->setWordWrap(true);
     tblAgents->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    tblAgents->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    tblAgents->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
-    tblAgents->horizontalHeader()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
+    for (int c : {0, 4, 5})   // colonnes courtes : largeur du contenu
+        tblAgents->horizontalHeader()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
     l->addWidget(tblAgents, 1);
     lw->addWidget(card, 1);
 
@@ -955,7 +1006,8 @@ QWidget *FireStation::creerListe()
     connect(edRecherche, &QLineEdit::textChanged, this, [this] { rafraichir(); });
     connect(cbFiltrePoste, &QComboBox::currentTextChanged, this, [this] { rafraichir(); });
     connect(cbCritere, &QComboBox::currentTextChanged, this, [this](const QString &c) {
-        edRecherche->setPlaceholderText(c == "Nom"       ? "Saisir le nom…"
+        edRecherche->setPlaceholderText(c == "CIN"       ? "Saisir le CIN…"
+                                        : c == "Nom"       ? "Saisir le nom…"
                                         : c == "Téléphone" ? "Saisir le numéro de téléphone…"
                                                            : "Saisir la certification (ex. PSE1)…");
         rafraichir();
@@ -1168,7 +1220,7 @@ QList<Compte> FireStation::comptes() const
     QList<Compte> liste;
     for (const FicheAgent &a : m_agents)
         if (!a.mdpHash.isEmpty() && ACCES.contains(a.poste))   // compte actif seulement
-            liste.append({a.id, a.nom + " " + a.prenom, a.poste, a.mdpHash, a.tel});
+            liste.append({a.cin, a.nom + " " + a.prenom, a.poste, a.mdpHash, a.tel});   // identifiant = CIN
     return liste;
 }
 
@@ -1184,7 +1236,9 @@ void FireStation::majUtilisateurConnecte()
 
 void FireStation::appliquerRole(const QString &identifiant, const QString &nom, const QString &role)
 {
-    m_idConnecte = identifiant;
+    m_idConnecte.clear();                 // identifiant = CIN → id_agent interne
+    for (const FicheAgent &a : m_agents)
+        if (a.cin == identifiant) m_idConnecte = a.id;
     m_roleConnecte = role;
     m_nomConnecte = nom;
     lblActeur->setText(QString("Connecté :<br><b>%1</b><br>%2").arg(nom.toHtmlEscaped(), role));
@@ -1236,14 +1290,6 @@ void FireStation::chargerSessions()
     s("SES-09", C_MAINT, ENPC,  40,  4);
     s("SES-10", C_FDF,   ZRIBA, 25, 10);
     s("SES-11", C_GOC,   ENPC,  60,  8);
-}
-
-QString FireStation::nouvelId() const
-{
-    int max = 0;
-    for (const FicheAgent &a : m_agents)
-        max = std::max(max, a.id.mid(4).toInt());
-    return QString("AGT-%1").arg(max + 1, 3, 10, QChar('0'));
 }
 
 int FireStation::indexParId(const QString &id) const
@@ -1424,14 +1470,14 @@ void FireStation::ajouter()
 {
     FicheAgent a; QString err;
     if (!lireFormulaire(a, err)) { lblErreur->setText(err); return; }
-    a.id = nouvelId();
+    // a.id reste vide : id_agent est donné par la base (auto-incrément)
     Agent agent = versAgent(a);                                     // Étape 2 : AJOUTER
     if (!agent.ajouter()) { erreurBase("Ajout", agent.derniereErreur()); return; }
     chargerAgents();                       // actualiser l'affichage après l'ajout
     reinitialiser();
     verifierEcheancesSms();
     rafraichir();
-    surlignerLigne(tblAgents, a.id);   // confirmation visuelle
+    surlignerLigne(tblAgents, a.cin);  // confirmation visuelle (ligne retrouvée par son CIN)
 }
 
 void FireStation::modifier()
@@ -1445,12 +1491,12 @@ void FireStation::modifier()
     if (!ACCES.contains(a.poste)) a.mdpHash.clear();            // poste sans accès : compte désactivé
     Agent agent = versAgent(a);                                     // Étape 3 : MODIFIER
     if (!agent.modifier()) { erreurBase("Modification", agent.derniereErreur()); return; }
-    const QString idModifie = a.id;
+    const QString cinModifie = a.cin;
     chargerAgents();                       // actualiser l'affichage après la modification
     reinitialiser();
     verifierEcheancesSms();
     rafraichir();
-    surlignerLigne(tblAgents, idModifie);   // confirmation visuelle
+    surlignerLigne(tblAgents, cinModifie);  // confirmation visuelle
 }
 
 void FireStation::reinitialiser()
@@ -1476,7 +1522,7 @@ void FireStation::chargerDansFormulaire(const QString &id)
     if (i < 0) return;
     const FicheAgent &a = m_agents[i];
     m_editingId = id;
-    lblFormTitle->setText("✎ Modifier " + id);
+    lblFormTitle->setText("✎ Modifier " + a.nom + " " + a.prenom);
     edNom->setText(a.nom); edPrenom->setText(a.prenom); edTel->setText(a.tel); edCin->setText(a.cin);
     cbPoste->setCurrentText(a.poste);
     onPosteChanged();
@@ -1495,45 +1541,214 @@ void FireStation::consulter(const QString &id)
 {
     const int i = indexParId(id);
     if (i < 0) return;
-    const FicheAgent &a = m_agents[i];
-    QString certs;
-    for (const Certification &c : a.certs)
-        certs += QString("<li>%1 — obtenue le %2, échéance %3</li>")
-                     .arg(c.nom.toHtmlEscaped(), c.obtention.toString("dd/MM/yyyy"),
-                          c.echeance.toString("dd/MM/yyyy"));
-    if (certs.isEmpty()) certs = "<li>Aucune</li>";
+    const FicheAgent a = m_agents[i];
 
-    QString recos;
-    for (const Recommandation &r : recommandationsPour(a)) {
-        QString ou = "aucune session programmée";
+    QDialog dlg(this);
+    dlg.setWindowTitle("Fiche agent");
+    dlg.setObjectName("fiche");
+    dlg.setMinimumWidth(640);
+    dlg.setStyleSheet(R"(
+#fiche { background: #f4f2ef; }
+#ficheHaut { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #5b1722, stop:1 #b3211c);
+    border-radius: 14px; }
+#ficheHaut QLabel { color: white; background: transparent; }
+QLabel#avatar { background: white; color: #9e1724; border-radius: 30px;
+    font-size: 22px; font-weight: 800; }
+#carte { background: white; border: 1px solid #e8e2dc; border-radius: 12px; }
+#carte QLabel { background: transparent; }
+QLabel#cle { color: #8a8580; font-size: 11px; font-weight: 700; }
+QLabel#val { color: #222; font-size: 13px; font-weight: 600; }
+QLabel#titreSec { color: #5b1722; font-size: 14px; font-weight: 800; }
+QLabel#gris { color: #7a7a7a; }
+QProgressBar { background: #f0ebe7; border: none; border-radius: 4px; max-height: 8px; }
+QProgressBar::chunk { border-radius: 4px; }
+QPushButton#ficheBtn { background: #9e1724; color: white; border: none; border-radius: 8px;
+    padding: 9px 22px; font-weight: 700; }
+QPushButton#ficheBtn:hover { background: #b3211c; }
+QPushButton#ficheBtn2 { background: white; color: #9e1724; border: 1px solid #e3b9bf;
+    border-radius: 8px; padding: 9px 22px; font-weight: 700; }
+QPushButton#ficheBtn2:hover { background: #fff1f2; }
+)");
+
+    // Petite étiquette colorée (statut, disponibilité…)
+    auto pastille = [](const QString &texte, const QString &fond, const QString &encre) {
+        auto *l = new QLabel(texte);
+        l->setStyleSheet(QString("QLabel { background: %1; color: %2; border-radius: 10px;"
+                                 " padding: 3px 10px; font-size: 11px; font-weight: 700; }")
+                             .arg(fond, encre));
+        l->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        return l;
+    };
+    auto carte = [] {
+        auto *f = new QFrame;
+        f->setObjectName("carte");
+        return f;
+    };
+    auto titre = [](const QString &t) {
+        auto *l = new QLabel(t);
+        l->setObjectName("titreSec");
+        return l;
+    };
+
+    auto *v = new QVBoxLayout(&dlg);
+    v->setContentsMargins(18, 18, 18, 18);
+    v->setSpacing(12);
+
+    // ---------------------------------------------------------- en-tête
+    auto *haut = new QFrame;
+    haut->setObjectName("ficheHaut");
+    auto *hh = new QHBoxLayout(haut);
+    hh->setContentsMargins(18, 16, 18, 16);
+    hh->setSpacing(14);
+    auto *avatar = new QLabel((a.prenom.left(1) + a.nom.left(1)).toUpper());
+    avatar->setObjectName("avatar");
+    avatar->setFixedSize(60, 60);
+    avatar->setAlignment(Qt::AlignCenter);
+    hh->addWidget(avatar);
+    auto *idt = new QVBoxLayout;
+    idt->setSpacing(2);
+    auto *nom = new QLabel(a.prenom + " " + a.nom);
+    nom->setStyleSheet("font-size: 20px; font-weight: 800;");
+    auto *sousTitre = new QLabel(a.grade.isEmpty() ? a.poste : a.poste + "  ·  " + a.grade);
+    sousTitre->setStyleSheet("font-size: 13px; color: #f6dfe2;");
+    idt->addWidget(nom);
+    idt->addWidget(sousTitre);
+    hh->addLayout(idt, 1);
+    hh->addWidget(pastille(a.dispo, fondDispo(a.dispo).name(), texteDispo(a.dispo).name()));
+    v->addWidget(haut);
+
+    // ---------------------------------------------------------- informations
+    auto *ci = carte();
+    auto *g = new QGridLayout(ci);
+    g->setContentsMargins(18, 14, 18, 14);
+    g->setHorizontalSpacing(24);
+    g->setVerticalSpacing(12);
+    const bool acces = ACCES.contains(a.poste) && !a.mdpHash.isEmpty();
+    const QList<QPair<QString, QString>> infos = {
+                                                   {"CIN", a.cin},
+                                                   {"TÉLÉPHONE", a.tel.isEmpty() ? "—" : a.tel},
+                                                   {"GRADE", a.grade.isEmpty() ? "—" : a.grade},
+                                                   {"SPÉCIALITÉ", a.specialite.isEmpty() ? "—" : a.specialite},
+                                                   {"INTERVENTIONS", QString::number(a.mois)},
+                                                   {"ACCÈS À L'APPLICATION", acces ? "Oui — " + ACCES.value(a.poste).join(", ") : "Non"}};
+    for (int k = 0; k < infos.size(); ++k) {
+        auto *bloc = new QVBoxLayout;
+        bloc->setSpacing(3);
+        auto *c = new QLabel(infos[k].first);
+        c->setObjectName("cle");
+        auto *val = new QLabel(infos[k].second);
+        val->setObjectName("val");
+        val->setWordWrap(true);
+        if (k == 5 && acces) val->setStyleSheet("color: #1e7a3c;");
+        bloc->addWidget(c);
+        bloc->addWidget(val);
+        g->addLayout(bloc, k / 3, k % 3);
+    }
+    for (int c = 0; c < 3; ++c) g->setColumnStretch(c, 1);
+    v->addWidget(ci);
+
+    // ---------------------------------------------------------- certification
+    auto *cc = carte();
+    auto *vc = new QVBoxLayout(cc);
+    vc->setContentsMargins(18, 14, 18, 14);
+    vc->setSpacing(8);
+    vc->addWidget(titre("Certification"));
+    if (a.certs.isEmpty()) {
+        auto *aucune = new QLabel("Aucune certification enregistrée.");
+        aucune->setObjectName("gris");
+        vc->addWidget(aucune);
+    }
+    for (const Certification &c : a.certs) {
+        const QDate today = QDate::currentDate();
+        const int reste = int(today.daysTo(c.echeance));
+        QString fond = "#dff3e4", encre = "#1e7a3c", etat = "Valide";
+        if (reste < 0) { fond = "#fde2e1"; encre = "#b3211c"; etat = "Expirée"; }
+        else if (reste <= ALERTE_JOURS) { fond = "#fff1d6"; encre = "#9a5b00";
+            etat = QString("Expire dans %1 j").arg(reste); }
+        auto *ligne = new QHBoxLayout;
+        auto *n = new QLabel(c.nom);
+        n->setObjectName("val");
+        ligne->addWidget(n, 1);
+        ligne->addWidget(pastille(etat, fond, encre));
+        vc->addLayout(ligne);
+        auto *dates = new QLabel(QString("Obtenue le %1  ·  Échéance le %2")
+                                     .arg(c.obtention.toString("dd/MM/yyyy"),
+                                          c.echeance.toString("dd/MM/yyyy")));
+        dates->setObjectName("gris");
+        vc->addWidget(dates);
+        // barre : part de la validité déjà écoulée
+        auto *barre = new QProgressBar;
+        barre->setTextVisible(false);
+        barre->setRange(0, std::max<qint64>(1, c.obtention.daysTo(c.echeance)));
+        barre->setValue(int(std::clamp<qint64>(c.obtention.daysTo(today), 0, barre->maximum())));
+        barre->setStyleSheet(QString("QProgressBar::chunk { background: %1; }").arg(encre));
+        vc->addWidget(barre);
+    }
+    v->addWidget(cc);
+
+    // ---------------------------------------------------------- formations recommandées
+    auto *cf = carte();
+    auto *vf = new QVBoxLayout(cf);
+    vf->setContentsMargins(18, 14, 18, 14);
+    vf->setSpacing(10);
+    vf->addWidget(titre("Formations recommandées"));
+    const QList<Recommandation> recos = recommandationsPour(a);
+    if (recos.isEmpty()) {
+        auto *ok = new QLabel("Aucune : le profil de l'agent est à jour.");
+        ok->setObjectName("gris");
+        vf->addWidget(ok);
+    }
+    for (int k = 0; k < recos.size(); ++k) {
+        const Recommandation &r = recos[k];
+        if (k > 0) {
+            auto *sep = new QFrame;
+            sep->setFixedHeight(1);
+            sep->setStyleSheet("background: #efe9e4;");
+            vf->addWidget(sep);
+        }
+        auto *ligne = new QHBoxLayout;
+        auto *n = new QLabel(r.certification);
+        n->setObjectName("val");
+        n->setWordWrap(true);
+        ligne->addWidget(n, 1);
+        if (r.inscrit) ligne->addWidget(pastille("Inscrit", "#dff3e4", "#1e7a3c"));
+        ligne->addWidget(r.urgente ? pastille(r.statut, "#fde2e1", "#b3211c")
+                                   : pastille(r.statut, "#fff1d6", "#9a5b00"));
+        vf->addLayout(ligne);
+        QString ou = "Aucune session programmée";
         if (r.sessionIndex >= 0) {
             const SessionFormation &s = m_sessions[r.sessionIndex];
-            ou = QString("%1, le %2").arg(s.lieu, s.date.toString("dd/MM/yyyy"));
+            ou = QString("Session : %1, le %2").arg(s.lieu, s.date.toString("dd/MM/yyyy"));
         }
-        recos += QString("<li><b>%1</b> (%2) — %3%4</li>")
-                     .arg(r.certification.toHtmlEscaped(), r.statut, ou.toHtmlEscaped(),
-                          r.inscrit ? " — <b>inscrit</b>" : "");
+        auto *det = new QLabel(r.motif.isEmpty() ? ou : r.motif + "\n" + ou);
+        det->setObjectName("gris");
+        det->setWordWrap(true);
+        vf->addWidget(det);
     }
-    if (recos.isEmpty()) recos = "<li>Aucune, le profil est à jour.</li>";
+    v->addWidget(cf);
 
-    QMessageBox box(this);
-    box.setWindowTitle("Fiche agent");
-    box.setTextFormat(Qt::RichText);
-    box.setText(QString("<h3>%1 — %2 %3</h3>"
-                        "<p>Poste : %4<br>Grade : %5<br>Spécialité : %6<br>"
-                        "Tél : %7<br>CIN : " + (a.cin.isEmpty() ? QString("—") : a.cin) +
-                        "<br>Disponibilité : %8<br>"
-                        "Accès à l'application : %11</p>"
-                        "<b>Certifications</b><ul>%9</ul>"
-                        "<b>Formations recommandées</b><ul>%10</ul>")
-                    .arg(a.id, a.nom.toHtmlEscaped(), a.prenom.toHtmlEscaped(), a.poste,
-                         a.grade.isEmpty() ? "—" : a.grade,
-                         a.specialite.isEmpty() ? "—" : a.specialite, a.tel, a.dispo)
-                    .arg(certs, recos)
-                    .arg(ACCES.contains(a.poste) && !a.mdpHash.isEmpty()
-                             ? "<b style='color:#1e7a3c'>Oui</b> — " + ACCES.value(a.poste).join(", ")
-                             : QString("Non")));
-    box.exec();
+    // ---------------------------------------------------------- boutons
+    auto *bas = new QHBoxLayout;
+    bas->addStretch();
+    if (!m_lectureSeule) {
+        auto *bMod = new QPushButton("Modifier cet agent");
+        bMod->setObjectName("ficheBtn2");
+        bMod->setCursor(Qt::PointingHandCursor);
+        connect(bMod, &QPushButton::clicked, &dlg, [&dlg, this, id] {
+            dlg.accept();
+            chargerDansFormulaire(id);
+        });
+        bas->addWidget(bMod);
+    }
+    auto *bFermer = new QPushButton("Fermer");
+    bFermer->setObjectName("ficheBtn");
+    bFermer->setCursor(Qt::PointingHandCursor);
+    bFermer->setDefault(true);
+    connect(bFermer, &QPushButton::clicked, &dlg, &QDialog::accept);
+    bas->addWidget(bFermer);
+    v->addLayout(bas);
+
+    dlg.exec();
 }
 
 void FireStation::supprimer(const QString &id)
@@ -1543,7 +1758,10 @@ void FireStation::supprimer(const QString &id)
                              "Vous ne pouvez pas supprimer votre propre compte pendant que vous êtes connecté.");
         return;
     }
-    if (QMessageBox::question(this, "Supprimer", "Supprimer l'agent " + id + " ?")
+    const int k = indexParId(id);
+    const QString qui = k < 0 ? QString() : m_agents[k].nom + " " + m_agents[k].prenom
+                                                + " (CIN " + m_agents[k].cin + ")";
+    if (QMessageBox::question(this, "Supprimer", "Supprimer l'agent " + qui + " ?")
         != QMessageBox::Yes) return;
     if (!m_agentTmp.supprimer(id)) {                                // Étape 4 : SUPPRIMER
         erreurBase("Suppression", m_agentTmp.derniereErreur());
@@ -1571,7 +1789,9 @@ void FireStation::rafraichir()
     for (const FicheAgent &a : m_agents) {
         if (!f.isEmpty() && a.poste != f) continue;
         QString valeur;
-        if (critere == "Téléphone") {
+        if (critere == "CIN") {
+            valeur = a.cin;                       // recherche par attribut unique
+        } else if (critere == "Téléphone") {
             valeur = QString(a.tel).remove(' ');
         } else if (critere == "Certification") {
             QStringList noms;
@@ -1596,12 +1816,43 @@ void FireStation::rafraichir()
     for (const FicheAgent *a : L) {
         const int r = tblAgents->rowCount();
         tblAgents->insertRow(r);
-        tblAgents->setRowHeight(r, 48);
-        const QStringList vals = {a->id, a->nom + " " + a->prenom, a->poste,
-                                  a->grade.isEmpty() ? "—" : a->grade,
-                                  a->specialite.isEmpty() ? "—" : a->specialite};
-        for (int c = 0; c < vals.size(); ++c)
-            tblAgents->setItem(r, c, new QTableWidgetItem(vals[c]));
+        tblAgents->setRowHeight(r, 58);
+        Certification cert;                    // une certification par agent (table AGENT)
+        if (!a->certs.isEmpty()) cert = a->certs.first();
+
+        // Case sur deux lignes : valeur principale en gras, détail en gris dessous
+        auto deuxLignes = [&](int c, const QString &haut, const QString &bas,
+                              const QString &couleurBas = "#7a7a7a") {
+            tblAgents->setItem(r, c, new QTableWidgetItem);   // fond (survol, surlignage)
+            auto *lb = new QLabel(QString("<b>%1</b>%2")
+                                      .arg(haut.toHtmlEscaped(),
+                                           bas.isEmpty() ? QString()
+                                                         : QString("<br><span style='color:%1'>%2</span>")
+                                                               .arg(couleurBas, bas.toHtmlEscaped())));
+            lb->setWordWrap(true);
+            lb->setStyleSheet("QLabel { background: transparent; padding: 0 8px; }");
+            tblAgents->setCellWidget(r, c, lb);
+        };
+
+        auto *ic = new QTableWidgetItem(a->cin);          // le CIN identifie l'agent à l'écran
+        ic->setTextAlignment(Qt::AlignCenter);
+        tblAgents->setItem(r, 0, ic);
+        deuxLignes(1, a->nom + " " + a->prenom, a->tel);
+        QStringList detail;                                // grade · spécialité
+        if (!a->grade.isEmpty()) detail << a->grade;
+        if (!a->specialite.isEmpty()) detail << a->specialite;
+        deuxLignes(2, a->poste, detail.join("  ·  "));
+        if (cert.nom.isEmpty()) {
+            deuxLignes(3, "—", QString());
+        } else {
+            // échéance dépassée ou proche : en rouge, comme dans les alertes
+            const bool proche = cert.echeance.isValid()
+                                && QDate::currentDate().daysTo(cert.echeance) <= ALERTE_JOURS;
+            deuxLignes(3, cert.nom,
+                       cert.obtention.toString("dd/MM/yyyy") + "  →  "
+                           + cert.echeance.toString("dd/MM/yyyy"),
+                       proche ? "#b3211c" : "#7a7a7a");
+        }
 
         // Disponibilité : case entière colorée (même style que le module Incidents)
         auto *disp = new QTableWidgetItem(a->dispo);
@@ -1611,28 +1862,34 @@ void FireStation::rafraichir()
         QFont fd = disp->font();
         fd.setBold(true);
         disp->setFont(fd);
-        tblAgents->setItem(r, 5, disp);
+        tblAgents->setItem(r, 4, disp);
 
         auto *w = new QWidget;
         auto *hl = new QHBoxLayout(w);
         hl->setContentsMargins(2, 2, 2, 2);
         hl->setSpacing(4);
         const QString id = a->id;
-        auto mk = [&](const QString &txt, const QString &tip) {
+        // Boutons sous forme d'icônes : le texte est dans l'info-bulle
+        auto mk = [&](const QString &type, const QString &tip, bool danger) {
             auto *b = new QToolButton;
-            b->setText(txt); b->setToolTip(tip); b->setCursor(Qt::PointingHandCursor);
-            b->setObjectName("tableAction");
+            b->setIcon(iconeAction(type, danger ? QColor("white") : QColor("#9e1724")));
+            b->setIconSize(QSize(18, 18));
+            b->setFixedSize(32, 32);
+            b->setToolTip(tip);
+            b->setCursor(Qt::PointingHandCursor);
+            b->setObjectName(danger ? "tableDelete" : "tableAction");
             hl->addWidget(b);
             return b;
         };
-        connect(mk("Voir", "Consulter"),    &QToolButton::clicked, this, [this, id] { consulter(id); });
+        connect(mk("voir", "Consulter la fiche", false), &QToolButton::clicked, this,
+                [this, id] { consulter(id); });
         if (!m_lectureSeule) {   // modification réservée au Responsable RH
-            connect(mk("Modifier", "Modifier"), &QToolButton::clicked, this, [this, id] { chargerDansFormulaire(id); });
-            auto *bSup = mk("Supprimer", "Supprimer cet agent");
-            bSup->setObjectName("tableDelete");
-            connect(bSup, &QToolButton::clicked, this, [this, id] { supprimer(id); });
+            connect(mk("modifier", "Modifier", false), &QToolButton::clicked, this,
+                    [this, id] { chargerDansFormulaire(id); });
+            connect(mk("supprimer", "Supprimer cet agent", true), &QToolButton::clicked, this,
+                    [this, id] { supprimer(id); });
         }
-        tblAgents->setCellWidget(r, 6, w);
+        tblAgents->setCellWidget(r, 5, w);
     }
     majUtilisateurConnecte();
     mettreAJourAlertes();
@@ -1688,7 +1945,7 @@ void FireStation::mettreAJourAlertes()
     int nRecos = 0;
     QSet<QString> agentsRecos;
     for (const FicheAgent &a : m_agents) {
-        const QString who = QString("%1 — %2 %3").arg(a.id, a.nom, a.prenom);
+        const QString who = QString("%1 %2 (CIN %3)").arg(a.nom, a.prenom, a.cin);
 
         // Innovation 1 : renouvellement des certifications (SMS envoyé à l'agent)
         for (const Certification &c : a.certs) {
@@ -1778,7 +2035,10 @@ void FireStation::envoyerSms(const QString &tel, const QString &message, const Q
 // Réinitialisation du mot de passe depuis la page de connexion (code reçu par SMS)
 void FireStation::changerMotDePasse(const QString &identifiant, const QString &mdpHash)
 {
-    if (!m_agentTmp.modifierMotDePasse(identifiant, mdpHash)) {
+    QString id;                           // identifiant = CIN → id_agent interne
+    for (const FicheAgent &a : m_agents)
+        if (a.cin == identifiant) id = a.id;
+    if (!m_agentTmp.modifierMotDePasse(id, mdpHash)) {
         erreurBase("Changement du mot de passe", m_agentTmp.derniereErreur());
         return;
     }
@@ -1930,7 +2190,7 @@ QWidget *FireStation::creerFormationsWidget()
     auto *cb = new QComboBox;
     cb->addItem("Tous les agents", QString());
     for (const FicheAgent &a : m_agents)
-        cb->addItem(QString("%1 — %2 %3").arg(a.id, a.nom, a.prenom), a.id);
+        cb->addItem(QString("%1 %2 — CIN %3").arg(a.nom, a.prenom, a.cin), a.id);
     const int sel = cb->findData(m_formFiltre);
     cb->setCurrentIndex(sel < 0 ? 0 : sel);
     rf->addWidget(cb);

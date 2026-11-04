@@ -71,15 +71,16 @@ bool Agent::ajouter()
     QSqlQuery query;
 
     // prepare() prend la requête en paramètre pour la préparer à l'exécution.
-    query.prepare("INSERT INTO AGENT (id_agent, nom, prenom, poste, grade, specialite, "
+    // id_agent n'est pas dans la requête : il est donné par la base
+    // (séquence seq_agent_id + trigger trg_agent_id = auto-incrément).
+    query.prepare("INSERT INTO AGENT (nom, prenom, poste, grade, specialite, "
                   "telephone, cin, disponibilite, certification, date_obtention, date_echeance, "
                   "mot_de_passe) "
-                  "VALUES (:id, :nom, :prenom, :poste, :grade, :specialite, :telephone, :cin, "
+                  "VALUES (:nom, :prenom, :poste, :grade, :specialite, :telephone, :cin, "
                   ":disponibilite, :certification, TO_DATE(:obtention, 'YYYY-MM-DD'), "
                   "TO_DATE(:echeance, 'YYYY-MM-DD'), :motDePasse)");
 
     // Création des variables liées (protection contre l'injection SQL)
-    query.bindValue(":id", id);
     query.bindValue(":nom", nom);
     query.bindValue(":prenom", prenom);
     query.bindValue(":poste", poste);
@@ -107,7 +108,7 @@ bool Agent::telephoneExiste(QString telephone, QString saufId)
     query.prepare("SELECT COUNT(*) FROM AGENT WHERE telephone = :telephone "
                   "AND id_agent <> :id");
     query.bindValue(":telephone", telephone);
-    query.bindValue(":id", saufId.isEmpty() ? QString("-") : saufId);
+    query.bindValue(":id", saufId.isEmpty() ? 0 : saufId.toInt());
     return query.exec() && query.next() && query.value(0).toInt() > 0;
 }
 
@@ -118,7 +119,7 @@ bool Agent::cinExiste(QString cin, QString saufId)
     query.prepare("SELECT COUNT(*) FROM AGENT WHERE cin = :cin "
                   "AND id_agent <> :id");
     query.bindValue(":cin", cin);
-    query.bindValue(":id", saufId.isEmpty() ? QString("-") : saufId);
+    query.bindValue(":id", saufId.isEmpty() ? 0 : saufId.toInt());
     return query.exec() && query.next() && query.value(0).toInt() > 0;
 }
 
@@ -130,7 +131,7 @@ bool Agent::posteExiste(QString poste, QString saufId)
     query.prepare("SELECT COUNT(*) FROM AGENT WHERE poste = :poste "
                   "AND id_agent <> :id");
     query.bindValue(":poste", poste);
-    query.bindValue(":id", saufId.isEmpty() ? QString("-") : saufId);
+    query.bindValue(":id", saufId.isEmpty() ? 0 : saufId.toInt());
     return query.exec() && query.next() && query.value(0).toInt() > 0;
 }
 
@@ -157,7 +158,7 @@ bool Agent::modifier()
     query.bindValue(":obtention", texteDate(dateObtention));
     query.bindValue(":echeance", texteDate(dateEcheance));
     query.bindValue(":motDePasse", motDePasse);
-    query.bindValue(":id", id);
+    query.bindValue(":id", id.toInt());
 
     const bool ok = query.exec() && query.numRowsAffected() > 0;
     erreur = ok ? QString() : query.lastError().text();
@@ -170,7 +171,7 @@ bool Agent::modifierMotDePasse(QString id, QString motDePasse)
     QSqlQuery query;
     query.prepare("UPDATE AGENT SET mot_de_passe = :motDePasse WHERE id_agent = :id");
     query.bindValue(":motDePasse", motDePasse);
-    query.bindValue(":id", id);
+    query.bindValue(":id", id.toInt());
     const bool ok = query.exec();
     erreur = ok ? QString() : query.lastError().text();
     return ok;
@@ -181,7 +182,7 @@ bool Agent::supprimer(QString id)
 {
     QSqlQuery query;
     query.prepare("DELETE FROM AGENT WHERE id_agent = :id");
-    query.bindValue(":id", id);
+    query.bindValue(":id", id.toInt());
 
     const bool ok = query.exec() && query.numRowsAffected() > 0;
     erreur = ok ? QString() : query.lastError().text();

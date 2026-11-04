@@ -114,7 +114,6 @@ private:
     Agent versAgent(const FicheAgent &f) const; // fiche de l'interface → objet Agent
     void chargerSessions();
     bool lireFormulaire(FicheAgent &a, QString &erreur);
-    QString nouvelId() const;
     int indexParId(const QString &id) const;
 
     void consulter(const QString &id);
