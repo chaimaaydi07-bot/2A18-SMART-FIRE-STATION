@@ -35,14 +35,16 @@ FormationDialog::FormationDialog(int idFormation, QWidget *parent) : QDialog(par
     )");
 
     m_intitule = new QLineEdit; m_formateur = new QLineEdit; m_lieu = new QLineEdit;
+    m_intitule->setMaxLength(100); m_formateur->setMaxLength(100); m_lieu->setMaxLength(100);
     m_intitule->setPlaceholderText("Ex. Secourisme niveau 1");
     m_formateur->setPlaceholderText("Nom du formateur");
     m_lieu->setPlaceholderText("Ex. Centre de formation, Tunis");
     m_type = new QComboBox; m_type->addItems(Formation::types()); m_type->setEditable(true);
+    m_type->lineEdit()->setMaxLength(50);
     m_debut = new QDateEdit(QDate::currentDate()); m_fin = new QDateEdit(QDate::currentDate());
     for (QDateEdit *d : {m_debut, m_fin}) { d->setCalendarPopup(true); d->setDisplayFormat("dd/MM/yyyy"); }
-    m_duree = new QSpinBox; m_duree->setRange(0, 1000); m_duree->setSuffix(" h");
-    m_capacite = new QSpinBox; m_capacite->setRange(0, 500);
+    m_duree = new QSpinBox; m_duree->setRange(0, 99999); m_duree->setSuffix(" h");
+    m_capacite = new QSpinBox; m_capacite->setRange(0, 99999);
     m_certif = new QCheckBox("Délivre une certification");
     m_annulee = new QCheckBox("Formation annulée");
     m_annulee->setVisible(modif);

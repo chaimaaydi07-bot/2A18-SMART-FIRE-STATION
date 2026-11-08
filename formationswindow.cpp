@@ -3,8 +3,11 @@
 #include "inscriptiondialog.h"
 #include "formationdialog.h"
 #include "statsdialog.h"
+#include "inscription.h"
 #include <QSqlQueryModel>
 #include <QSqlQuery>
+#include <QSqlError>
+#include <QSqlRecord>
 #include <QLineEdit>
 #include <QComboBox>
 #include <QDateEdit>
@@ -32,6 +35,9 @@
 #include <QFrame>
 #include <QGraphicsDropShadowEffect>
 #include <QPainter>
+#include <QPolygon>
+#include <QStringList>
+#include <QVector>
 
 // Modèle d'affichage : dates lisibles, taux de remplissage coloré (vert / orange / rouge).
 // Colonnes : 0 id, 1 intitulé, 2 type, 3 formateur, 4 début, 5 fin, 6 durée, 7 lieu,
@@ -238,7 +244,8 @@ FormationsWindow::FormationsWindow(QWidget *parent) : QMainWindow(parent)
     m_table->verticalHeader()->setDefaultSectionSize(40);
 
     auto *bPart = new QPushButton("Participants…"), *bStats = new QPushButton("Statistiques");
-    for (auto *b : {bPart, bStats}) { b->setObjectName("btnSec"); b->setCursor(Qt::PointingHandCursor); }
+    auto *bAttestations = new QPushButton("✦ Attestations PDF");
+    for (auto *b : {bPart, bStats, bAttestations}) { b->setObjectName("btnSec"); b->setCursor(Qt::PointingHandCursor); }
     m_resume = new QLabel; m_resume->setObjectName("aide");
     m_badgeNb = creerBadge("0 formation", true);
 
@@ -251,7 +258,7 @@ FormationsWindow::FormationsWindow(QWidget *parent) : QMainWindow(parent)
     haut->addWidget(m_recherche, 1); haut->addWidget(new QLabel("Trier par :"));
     haut->addWidget(m_tri); haut->addWidget(m_ordre);
     auto *bas = new QHBoxLayout;
-    bas->addWidget(m_resume, 1); bas->addWidget(bPart); bas->addWidget(bStats);
+    bas->addWidget(m_resume, 1); bas->addWidget(bPart); bas->addWidget(bStats); bas->addWidget(bAttestations);
     ll->addLayout(entete2); ll->addLayout(haut); ll->addWidget(m_table, 1); ll->addLayout(bas);
 
     // ================= CONTENU =================
@@ -279,6 +286,7 @@ FormationsWindow::FormationsWindow(QWidget *parent) : QMainWindow(parent)
     });
     connect(bPart, &QPushButton::clicked, this, &FormationsWindow::participants);
     connect(bPdf, &QPushButton::clicked, this, &FormationsWindow::exporterPdf);
+    connect(bAttestations, &QPushButton::clicked, this, &FormationsWindow::exporterAttestations);
     connect(bStats, &QPushButton::clicked, this, [this] { StatsDialog(this).exec(); });
     connect(m_recherche, &QLineEdit::textChanged, this, [this] { rafraichir(); });   // temps réel
     connect(m_tri, &QComboBox::currentIndexChanged, this, [this] { rafraichir(); });
@@ -306,7 +314,10 @@ void FormationsWindow::rafraichir()
 {
     Formation::majStatuts();
     const int idAvant = idSelectionne();
-    QSqlQuery q = Formation::liste(m_recherche->text(), m_tri->currentData().toString(), m_croissant);
+    const bool affichageSimple = m_recherche->text().trimmed().isEmpty()
+        && m_tri->currentData().toString() == "date_debut" && m_croissant;
+    QSqlQuery q = affichageSimple ? Formation::afficher()
+        : Formation::liste(m_recherche->text(), m_tri->currentData().toString(), m_croissant);
     m_model->setQuery(std::move(q));
     const char *titres[] = {"ID", "Intitulé", "Type", "Formateur", "Début", "Fin", "Durée (h)",
                             "Lieu", "Capacité", "Inscrits / Capacité", "Certification", "Statut", "Places"};
@@ -398,7 +409,10 @@ void FormationsWindow::supprimer()
                    QString("Voulez-vous vraiment supprimer la formation « %1 » ?").arg(f.intitule),
                    "Supprimer", detail))
         return;
-    Formation::supprimer(id);
+    if (!Formation::supprimer(id)) {
+        QMessageBox::warning(this, "Suppression impossible", "La formation est introuvable ou Oracle a refusé la suppression.");
+        return;
+    }
     viderFormulaire(); rafraichir();
 }
 
@@ -437,4 +451,87 @@ void FormationsWindow::exporterPdf()
     QTextDocument doc; doc.setHtml(html);
     doc.print(&pdf);
     QMessageBox::information(this, "Export PDF", "Planning exporté :\n" + chemin);
+}
+
+void FormationsWindow::exporterAttestations()
+{
+    QSqlQuery q = Inscription::attestations();
+    if (q.lastError().isValid()) {
+        QMessageBox::warning(this, "Attestations", "Impossible de charger les réussites :\n" + q.lastError().text());
+        return;
+    }
+    struct LigneAttestation { QStringList valeurs; };
+    QVector<LigneAttestation> lignes;
+    while (q.next()) {
+        QStringList valeurs;
+        for (int c=0; c<q.record().count(); ++c) valeurs << q.value(c).toString();
+        lignes.append({valeurs});
+    }
+    if (lignes.isEmpty()) {
+        QMessageBox::information(this, "Attestations", "Aucune attestation à générer. Il faut une formation terminée, une présence confirmée et un résultat réussi.");
+        return;
+    }
+    QString chemin = QFileDialog::getSaveFileName(this, "Créer les attestations", "attestations_formation.pdf", "PDF (*.pdf)");
+    if (chemin.isEmpty()) return;
+    if (!chemin.endsWith(".pdf", Qt::CaseInsensitive)) chemin += ".pdf";
+
+    QPdfWriter pdf(chemin);
+    pdf.setPageSize(QPageSize::A4);
+    pdf.setPageOrientation(QPageLayout::Landscape);
+    pdf.setResolution(96);
+    QPainter p(&pdf);
+    if (!p.isActive()) {
+        QMessageBox::warning(this, "Attestations", "Impossible d'ouvrir le fichier PDF.");
+        return;
+    }
+    p.setRenderHint(QPainter::Antialiasing);
+    const QRect page = p.viewport();
+    const QPixmap logo(":/images/logo.png");
+    for (int i=0; i<lignes.size(); ++i) {
+        if (i) pdf.newPage();
+        const QStringList &v = lignes[i].valeurs;
+        p.fillRect(page, QColor("#fffaf4"));
+        const QRect cadre = page.adjusted(34,34,-34,-34);
+        p.setBrush(Qt::NoBrush); p.setPen(QPen(QColor("#87172b"),5)); p.drawRoundedRect(cadre,24,24);
+        p.setPen(QPen(QColor("#c8a05b"),2)); p.drawRoundedRect(cadre.adjusted(12,12,-12,-12),18,18);
+
+        p.setPen(Qt::NoPen); p.setBrush(QColor("#74172b"));
+        QPolygon bandeau; bandeau << QPoint(cadre.left()+14,cadre.top()+14) << QPoint(cadre.right()-14,cadre.top()+14)
+                                  << QPoint(cadre.right()-14,cadre.top()+108) << QPoint(cadre.left()+14,cadre.top()+108);
+        p.drawPolygon(bandeau);
+        if (!logo.isNull()) p.drawPixmap(QRect(cadre.left()+28,cadre.top()+26,62,62), logo);
+        p.setPen(Qt::white); p.setFont(QFont("Segoe UI",15,QFont::Bold));
+        p.drawText(QRect(cadre.left()+100,cadre.top()+26,cadre.width()-200,28),Qt::AlignCenter,"SMART FIRE STATION  ·  CENTRE DE FORMATION");
+        p.setFont(QFont("Georgia",31,QFont::Bold));
+        p.drawText(QRect(cadre.left()+70,cadre.top()+135,cadre.width()-140,52),Qt::AlignCenter,"ATTESTATION DE FORMATION");
+        p.setPen(QColor("#bd8b52")); p.drawLine(page.width()/2-115,cadre.top()+202,page.width()/2+115,cadre.top()+202);
+        p.setPen(QColor("#51454a")); p.setFont(QFont("Segoe UI",14));
+        p.drawText(QRect(cadre.left()+100,cadre.top()+220,cadre.width()-200,34),Qt::AlignCenter,"Nous attestons que");
+        p.setPen(QColor("#79182e")); p.setFont(QFont("Georgia",25,QFont::Bold));
+        p.drawText(QRect(cadre.left()+80,cadre.top()+255,cadre.width()-160,48),Qt::AlignCenter,v.value(1));
+        p.setPen(QColor("#51454a")); p.setFont(QFont("Segoe UI",14));
+        p.drawText(QRect(cadre.left()+80,cadre.top()+310,cadre.width()-160,32),Qt::AlignCenter,"a suivi et réussi la formation");
+        p.setPen(QColor("#30242a")); p.setFont(QFont("Georgia",22,QFont::DemiBold));
+        p.drawText(QRect(cadre.left()+110,cadre.top()+347,cadre.width()-220,58),Qt::AlignCenter|Qt::TextWordWrap,v.value(2));
+        p.setPen(QColor("#63565a")); p.setFont(QFont("Segoe UI",13));
+        p.drawText(QRect(cadre.left()+80,cadre.top()+414,cadre.width()-160,30),Qt::AlignCenter,
+                   QString("Du %1 au %2   ·   %3   ·   %4 heure(s)").arg(v.value(5),v.value(6),v.value(4),v.value(7)));
+
+        const int signatureY = cadre.bottom()-66;
+        p.setPen(QPen(QColor("#baa7a4"),1));
+        p.drawLine(cadre.left()+115,signatureY,cadre.left()+350,signatureY);
+        p.drawLine(cadre.right()-350,signatureY,cadre.right()-115,signatureY);
+        p.setPen(QColor("#51454a")); p.setFont(QFont("Segoe UI",11,QFont::DemiBold));
+        p.drawText(QRect(cadre.left()+95,signatureY+6,275,24),Qt::AlignCenter,"Le formateur · "+v.value(3));
+        p.drawText(QRect(cadre.right()-370,signatureY+6,275,24),Qt::AlignCenter,"Direction de la formation");
+        const QPoint sceau(cadre.right()-94,cadre.top()+188);
+        p.setPen(QPen(QColor("#ba8a3c"),3)); p.setBrush(QColor("#fff8e8")); p.drawEllipse(sceau,39,39);
+        p.setPen(QColor("#9b1b32")); p.setFont(QFont("Georgia",11,QFont::Bold));
+        p.drawText(QRect(sceau.x()-32,sceau.y()-19,64,38),Qt::AlignCenter,"RÉUSSITE\n✦");
+        p.setPen(QColor("#766a6d")); p.setFont(QFont("Segoe UI",9));
+        p.drawText(QRect(cadre.left()+30,cadre.bottom()-34,cadre.width()-60,18),Qt::AlignCenter,
+                   QString("N° %1   ·   Émise le %2").arg(v.value(0),QDate::currentDate().toString("dd/MM/yyyy")));
+    }
+    p.end();
+    QMessageBox::information(this, "PDF créé", QString("%1 attestation(s) enregistrée(s) dans :\n%2").arg(lignes.size()).arg(chemin));
 }

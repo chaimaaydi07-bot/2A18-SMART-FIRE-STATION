@@ -9,8 +9,9 @@
 #include <QTableView>
 #include <QHeaderView>
 #include <QSqlQueryModel>
-#include <QSqlQuery>
 #include <QMessageBox>
+#include <QSqlError>
+#include <utility>
 
 InscriptionDialog::InscriptionDialog(int idFormation, QWidget *parent)
     : QDialog(parent), m_idFormation(idFormation)
@@ -52,14 +53,14 @@ InscriptionDialog::InscriptionDialog(int idFormation, QWidget *parent)
         afficher(Inscription::inscrire(m_idFormation, m_agents->currentData().toInt()));
     });
     connect(desinscrire, &QPushButton::clicked, this, [this] {
-        const int id = inscriptionSelectionnee();
-        if (id < 0) { QMessageBox::information(this, "Participants", "Sélectionnez un participant."); return; }
-        afficher(Inscription::desinscrire(id));
+        const auto cle = inscriptionSelectionnee();
+        if (cle.first < 0) { QMessageBox::information(this, "Participants", "Sélectionnez un participant."); return; }
+        afficher(Inscription::desinscrire(cle.first, cle.second));
     });
     auto marquer = [this](int presence, const QString &res) {
-        const int id = inscriptionSelectionnee();
-        if (id < 0) { QMessageBox::information(this, "Participants", "Sélectionnez un participant."); return; }
-        afficher(Inscription::marquer(id, presence, res));
+        const auto cle = inscriptionSelectionnee();
+        if (cle.first < 0) { QMessageBox::information(this, "Participants", "Sélectionnez un participant."); return; }
+        afficher(Inscription::marquer(cle.first, cle.second, presence, res));
     };
     connect(present, &QPushButton::clicked, this, [=] { marquer(1, ""); });
     connect(absent,  &QPushButton::clicked, this, [=] { marquer(0, ""); });
@@ -87,10 +88,12 @@ InscriptionDialog::InscriptionDialog(int idFormation, QWidget *parent)
     rafraichir();
 }
 
-int InscriptionDialog::inscriptionSelectionnee() const
+QPair<int, int> InscriptionDialog::inscriptionSelectionnee() const
 {
     const QModelIndex i = m_table->currentIndex();
-    return i.isValid() ? m_model->data(m_model->index(i.row(), 0)).toInt() : -1;
+    if (!i.isValid()) return {-1, -1};
+    return {m_model->data(m_model->index(i.row(), 0)).toInt(),
+            m_model->data(m_model->index(i.row(), 1)).toInt()};
 }
 
 void InscriptionDialog::afficher(const Retour &r)
@@ -108,31 +111,29 @@ void InscriptionDialog::rafraichir()
         .arg(f.intitule, f.type, f.dateDebut.toString("dd/MM/yyyy"), f.dateFin.toString("dd/MM/yyyy"))
         .arg(Formation::inscrits(m_idFormation)).arg(f.capacite).arg(Formation::libelleStatut(f.statut)));
 
-    QSqlQuery q;
-    q.prepare("SELECT i.id, a.nom || ' ' || a.prenom, a.grade, CASE i.etat WHEN 'inscrit' THEN 'Inscrit' ELSE 'Liste d''attente' END,"
-              " CASE WHEN i.presence = 1 THEN 'Présent' WHEN i.presence = 0 THEN 'Absent' ELSE '—' END,"
-              " CASE i.resultat WHEN 'reussi' THEN 'Réussi' WHEN 'echoue' THEN 'Échoué' ELSE 'En attente' END"
-              " FROM inscription i JOIN agent a ON a.id = i.id_agent"
-              " WHERE i.id_formation = ?"
-              " ORDER BY CASE i.etat WHEN 'inscrit' THEN 0 ELSE 1 END, i.id");
-    q.addBindValue(m_idFormation); q.exec();
-    m_model->setQuery(std::move(q));
+    QSqlQuery participants = Inscription::participants(m_idFormation);
+    const QString erreurParticipants = participants.lastError().text();
+    m_model->setQuery(std::move(participants));
+    if (!erreurParticipants.isEmpty())
+        m_info->setText("Erreur de chargement des participants : " + erreurParticipants);
     // Libellés lisibles
-    m_model->setHeaderData(0, Qt::Horizontal, "ID");
-    m_model->setHeaderData(1, Qt::Horizontal, "Agent");
-    m_model->setHeaderData(2, Qt::Horizontal, "Grade");
-    m_model->setHeaderData(3, Qt::Horizontal, "État");
-    m_model->setHeaderData(4, Qt::Horizontal, "Présence");
-    m_model->setHeaderData(5, Qt::Horizontal, "Résultat");
-    m_table->hideColumn(0);
+    m_model->setHeaderData(0, Qt::Horizontal, "Formation");
+    m_model->setHeaderData(1, Qt::Horizontal, "ID agent");
+    m_model->setHeaderData(2, Qt::Horizontal, "Agent");
+    m_model->setHeaderData(3, Qt::Horizontal, "Grade");
+    m_model->setHeaderData(4, Qt::Horizontal, "État");
+    m_model->setHeaderData(5, Qt::Horizontal, "Présence");
+    m_model->setHeaderData(6, Qt::Horizontal, "Résultat");
+    m_table->hideColumn(0); m_table->hideColumn(1);
 
     const QVariant courant = m_agents->currentData();
     m_agents->clear();
-    QSqlQuery a;
-    a.prepare("SELECT id, nom || ' ' || prenom || ' (' || COALESCE(grade,'') || ')' FROM agent"
-              " WHERE id NOT IN (SELECT id_agent FROM inscription WHERE id_formation = ?) ORDER BY nom");
-    a.addBindValue(m_idFormation); a.exec();
-    while (a.next()) m_agents->addItem(a.value(1).toString(), a.value(0));
+    QSqlQuery agents = Inscription::agentsDisponibles(m_idFormation);
+    if (!agents.exec()) {
+        m_info->setText("Erreur de chargement des agents : " + agents.lastError().text());
+        return;
+    }
+    while (agents.next()) m_agents->addItem(agents.value(1).toString(), agents.value(0));
     const int idx = m_agents->findData(courant);
     if (idx >= 0) m_agents->setCurrentIndex(idx);
 }

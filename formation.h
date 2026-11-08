@@ -26,6 +26,8 @@ public:
     static int placesRestantes(int idFormation);
 
     static QSqlQuery liste(const QString &recherche, const QString &colonneTri, bool croissant);
+    static QSqlQuery afficher();
+    static QSqlQuery statistiques();
     static QStringList types();
     static QString libelleStatut(const QString &code);
 };

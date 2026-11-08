@@ -20,6 +20,7 @@ private:
     void supprimer();
     void participants();
     void exporterPdf();
+    void exporterAttestations();
 
     QLineEdit *m_intitule, *m_formateur, *m_lieu, *m_recherche;
     QComboBox *m_type, *m_tri;

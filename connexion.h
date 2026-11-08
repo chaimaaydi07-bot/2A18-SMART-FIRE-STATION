@@ -2,13 +2,10 @@
 #define CONNEXION_H
 #include <QString>
 
-// Accès à la base SQLite locale (créée automatiquement au premier lancement).
+// Connexion unique a la base Oracle commune via QODBC.
 class Connexion {
 public:
-    static bool ouvrir(const QString &chemin = "smartfire.db");
+    static bool ouvrir();
     static QString derniereErreur();
-private:
-    static bool creerTables();
-    static void donneesDemo();
 };
 #endif
