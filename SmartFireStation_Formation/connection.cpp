@@ -34,7 +34,12 @@ bool Connection::createConnection()
 
     db.setDatabaseName(qEnvironmentVariable("SMARTFIRE_ODBC_DSN", "SmartFireStation"));
     db.setUserName(qEnvironmentVariable("SMARTFIRE_DB_USER", "smartfire"));
-    db.setPassword(qEnvironmentVariable("SMARTFIRE_DB_PASSWORD", "smartfire2026"));
+    const QString motDePasse = qEnvironmentVariable("SMARTFIRE_DB_PASSWORD");
+    if (motDePasse.isEmpty()) {
+        g_erreur = "Configurez SMARTFIRE_DB_PASSWORD avant de lancer l application.";
+        return false;
+    }
+    db.setPassword(motDePasse);
 
     if (!db.open()) {
         g_erreur = db.lastError().text();

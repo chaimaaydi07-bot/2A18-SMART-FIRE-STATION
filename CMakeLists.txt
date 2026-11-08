@@ -19,7 +19,7 @@ set(PROJECT_SOURCES
     inscriptiondialog.cpp inscriptiondialog.h
     formationswindow.cpp formationswindow.h
     statsdialog.cpp statsdialog.h
-    connexion.cpp connexion.h
+    connection.cpp connection.h
     images.qrc
     resources.qrc
 )
