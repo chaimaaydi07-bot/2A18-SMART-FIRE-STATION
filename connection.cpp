@@ -1,26 +1,49 @@
 #include "connection.h"
-#include <QSqlQuery>
 #include <QSqlError>
-#include <QDebug>
+#include <QStringList>
 
-Connection::Connection() {}
+static QString g_erreur;
 
-// Connexion Oracle via ODBC.
-// 1) Creez la source ODBC (voir README) et notez son nom -> NOM_SOURCE_ODBC
-// 2) Remplacez l'utilisateur et le mot de passe par ceux de votre schema Oracle.
+Connection::Connection()
+    : db(QSqlDatabase::addDatabase("QODBC"))
+{}
+
+Connection::~Connection()
+{
+    closeConnection();
+}
+
+Connection &Connection::createInstance()
+{
+    static Connection instance;
+    return instance;
+}
+
+QString Connection::derniereErreur()
+{
+    return g_erreur;
+}
+
 bool Connection::createConnection()
 {
-    const QString NOM_SOURCE_ODBC = "Source_Projet2A";
-    const QString UTILISATEUR     = "votre_user";
-    const QString MOT_DE_PASSE    = "votre_mdp";
+    g_erreur.clear();
+    if (!QSqlDatabase::drivers().contains("QODBC")) {
+        g_erreur = "Pilote Qt QODBC indisponible. Pilotes détectés : "
+                   + QSqlDatabase::drivers().join(", ");
+        return false;
+    }
+    if (db.isOpen()) return true;
 
-    QSqlDatabase db = QSqlDatabase::addDatabase("QODBC");
-    db.setDatabaseName(NOM_SOURCE_ODBC);
-    db.setUserName(UTILISATEUR);
-    db.setPassword(MOT_DE_PASSE);
-
+    const QString motDePasse = qEnvironmentVariable("SMARTFIRE_DB_PASSWORD");
+    if (motDePasse.isEmpty()) {
+        g_erreur = "Configurez SMARTFIRE_DB_PASSWORD avant de lancer l'application.";
+        return false;
+    }
+    db.setDatabaseName(qEnvironmentVariable("SMARTFIRE_ODBC_DSN", "SmartFireStation"));
+    db.setUserName(qEnvironmentVariable("SMARTFIRE_DB_USER", "smartfire"));
+    db.setPassword(motDePasse);
     if (!db.open()) {
-        qDebug() << "Connexion Oracle echouee :" << db.lastError().text();
+        g_erreur = db.lastError().text();
         return false;
     }
     return true;
@@ -28,5 +51,5 @@ bool Connection::createConnection()
 
 void Connection::closeConnection()
 {
-    QSqlDatabase::database().close();
+    if (db.isValid() && db.isOpen()) db.close();
 }

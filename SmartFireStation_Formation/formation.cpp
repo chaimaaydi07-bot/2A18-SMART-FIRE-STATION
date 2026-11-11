@@ -159,13 +159,13 @@ bool Formation::existe(int idTest)
 int Formation::nbInscrits(int idFormation)
 {
     QSqlQuery q;
-    q.prepare("SELECT COUNT(*) FROM INSCRIPTION WHERE ID_FORMATION=:id");
+    q.prepare("SELECT COUNT(*) FROM INSCRIPTION WHERE ID_FORMATION=:id AND STATUT_INSCRIPTION='INSCRIT'");
     q.bindValue(":id", idFormation);
     return (q.exec() && q.next()) ? q.value(0).toInt() : 0;
 }
 
 // Enregistre la presence d'un agent a une formation (inscription deja existante)
-bool Formation::enregistrerPresence(int idFormation, int idPompier)
+bool Formation::enregistrerPresence(int idFormation, int idAgent)
 {
     if (!existe(idFormation)) return false;
 
@@ -176,11 +176,11 @@ bool Formation::enregistrerPresence(int idFormation, int idPompier)
     if (nbInscrits(idFormation) >= p.value(0).toInt()) return false; // formation complete
 
     QSqlQuery q;
-    q.prepare("INSERT INTO INSCRIPTION (ID_FORMATION, ID_POMPIER, DATE_PRESENCE) "
-              "VALUES (:f, :p, TO_DATE(:d,'YYYY-MM-DD'))");
+    q.prepare("INSERT INTO INSCRIPTION (ID_FORMATION, ID_AGENT, DATE_INSCRIPTION, "
+              "STATUT_INSCRIPTION, PRESENCE, RESULTAT) "
+              "VALUES (:f, :a, SYSDATE, 'INSCRIT', 1, 'EN_ATTENTE')");
     q.bindValue(":f", idFormation);
-    q.bindValue(":p", idPompier);
-    q.bindValue(":d", QDate::currentDate().toString("yyyy-MM-dd"));
+    q.bindValue(":a", idAgent);
     return q.exec();
 }
 

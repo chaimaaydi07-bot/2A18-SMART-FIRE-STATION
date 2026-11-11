@@ -1,6 +1,7 @@
 #ifndef INSCRIPTIONDIALOG_H
 #define INSCRIPTIONDIALOG_H
 #include <QDialog>
+#include <QPair>
 #include "inscription.h"
 
 class QLabel; class QTableView; class QComboBox; class QSqlQueryModel;
@@ -11,7 +12,7 @@ public:
     InscriptionDialog(int idFormation, QWidget *parent = nullptr);
 private:
     void rafraichir();
-    int inscriptionSelectionnee() const;
+    QPair<int, int> inscriptionSelectionnee() const;
     void afficher(const Retour &r);
 
     int m_idFormation;

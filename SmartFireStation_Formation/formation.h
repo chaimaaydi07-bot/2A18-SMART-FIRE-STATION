@@ -54,7 +54,7 @@ public:
     QMap<QString,int> statistiquesParType();
         QSqlQueryModel* prochaines(int jours = 7);
     bool existe(int id);
-    bool enregistrerPresence(int idFormation, int idPompier);
+    bool enregistrerPresence(int idFormation, int idAgent);
     int  nbInscrits(int idFormation);
 
 private:

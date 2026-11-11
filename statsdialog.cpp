@@ -1,10 +1,12 @@
 #include "statsdialog.h"
+#include "formation.h"
 #include <QPainter>
 #include <QVBoxLayout>
 #include <QTableWidget>
 #include <QHeaderView>
-#include <QSqlQuery>
 #include <QLabel>
+#include <QSqlQuery>
+#include <QSqlError>
 
 BarChart::BarChart(const QVector<StatType> &data, QWidget *parent) : QWidget(parent), m_data(data)
 {
@@ -50,17 +52,16 @@ StatsDialog::StatsDialog(QWidget *parent) : QDialog(parent)
     resize(700, 520);
 
     QVector<StatType> data;
-    QSqlQuery q("SELECT f.type, COUNT(DISTINCT f.id),"
-                " COALESCE(SUM(i.etat='inscrit'),0),"
-                " COALESCE(SUM(i.etat='inscrit' AND i.presence=1),0),"
-                " COALESCE(SUM(i.etat='inscrit' AND i.resultat='reussi'),0)"
-                " FROM formation f LEFT JOIN inscription i ON i.id_formation=f.id"
-                " WHERE f.statut <> 'annulee' GROUP BY f.type ORDER BY f.type");
+    QSqlQuery q = Formation::statistiques();
     while (q.next())
         data.append({q.value(0).toString(), q.value(1).toInt(), q.value(2).toInt(),
                      q.value(3).toInt(), q.value(4).toInt()});
 
     auto *lay = new QVBoxLayout(this);
+    if (q.lastError().isValid()) {
+        lay->addWidget(new QLabel("Impossible de charger les statistiques : " + q.lastError().text()));
+        return;
+    }
     lay->addWidget(new QLabel("<b>Taux de participation</b> (présents / inscrits) et "
                               "<b>taux de réussite</b> (réussis / présents) par type de formation"));
     lay->addWidget(new BarChart(data));

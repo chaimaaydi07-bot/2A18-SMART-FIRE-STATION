@@ -1,5 +1,5 @@
 #include "formationswindow.h"
-#include "connexion.h"
+#include "connection.h"
 #include <QtWidgets>
 #include <QPainterPath>
 #include <QPdfWriter>
@@ -957,10 +957,9 @@ private:
 
         if (name == "Gestion des formations") {
             connect(button, &QPushButton::clicked, owner, [owner] {
-                static bool dbOk = Connexion::ouvrir();
-                if (!dbOk) {
+                if (!Connection::createInstance().createConnection()) {
                     QMessageBox::critical(owner, "Base de donnees",
-                        "Impossible d ouvrir la base : " + Connexion::derniereErreur());
+                        "Impossible d ouvrir la base : " + Connection::derniereErreur());
                     return;
                 }
                 auto *w = new FormationsWindow;
