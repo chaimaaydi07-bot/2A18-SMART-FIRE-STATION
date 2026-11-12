@@ -49,13 +49,9 @@ int main(int argc, char *argv[])
     bool test = c.createConnection();
 
     //************************Test Connection BD**************************//
-    if (test) {
-        QMessageBox::information(
-            nullptr,
-            QObject::tr("Base de données"),
-            QObject::tr("Connexion réussie.")
-            );
-    } else {
+    // Connexion réussie : l'application démarre directement (pas de fenêtre).
+    // Un message s'affiche seulement en cas d'échec.
+    if (!test) {
         QMessageBox::critical(
             nullptr,
             QObject::tr("Base de données"),
