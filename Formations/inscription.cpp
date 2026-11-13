@@ -97,13 +97,15 @@ bool Inscription::supprimer()
 
 QSqlQueryModel* Inscription::afficher()
 {
-    QSqlQuery query("SELECT ID, ID_AGENT, "
+    QSqlQuery query("SELECT i.ID, i.ID_AGENT, "
                     "TO_CHAR(DATE_INSCRIPTION, 'YYYY-MM-DD') AS DATE_INSCRIPTION, "
                     "CASE STATUT_INSCRIPTION WHEN 'En attente' THEN 'ATTENTE' "
                     "WHEN 'Annulé' THEN 'ANNULE' WHEN 'Confirmé' THEN 'CONFIRME' ELSE 'INSCRIT' END, "
                     "CASE PRESENCE WHEN 'Présent' THEN 1 WHEN 'Absent' THEN 0 END, "
-                    "CASE RESULTAT WHEN 'Réussi' THEN 'REUSSI' WHEN 'Échoué' THEN 'ECHEC' ELSE 'EN_ATTENTE' END "
-                    "FROM INSCRIRE ORDER BY ID, ID_AGENT");
+                    "CASE RESULTAT WHEN 'Réussi' THEN 'REUSSI' WHEN 'Échoué' THEN 'ECHEC' ELSE 'EN_ATTENTE' END, "
+                    "f.TITRE, a.NOM || ' ' || a.PRENOM || NVL2(a.SPECIALITE, ' (' || a.SPECIALITE || ')', '') "
+                    "FROM INSCRIRE i JOIN FORMATION f ON f.ID=i.ID "
+                    "JOIN AGENT a ON a.ID_AGENT=i.ID_AGENT ORDER BY f.TITRE, a.NOM, a.PRENOM, a.SPECIALITE");
     QSqlQueryModel *model = new QSqlQueryModel();
     if (!QSqlDatabase::database().isOpen()) {
         g_erreurInscription = "Connexion Oracle non ouverte.";

@@ -159,7 +159,7 @@ QSqlQueryModel* Formation::rechercher(const QString &critere)
     QSqlQuery q;
     q.prepare("SELECT ID, TITRE, TYPE, TO_CHAR(DATE_DEBUT,'YYYY-MM-DD') AS DATE_DEBUT, TO_CHAR(DATE_FIN,'YYYY-MM-DD') AS DATE_FIN, DUREE, FORMATEUR, "
               "LIEU, NB_PLACES, NIVEAU, STATUT FROM FORMATION "
-              "WHERE TO_CHAR(ID) LIKE :c OR TITRE LIKE :c OR TYPE LIKE :c "
+              "WHERE TITRE LIKE :c OR TYPE LIKE :c "
               "OR FORMATEUR LIKE :c OR LIEU LIKE :c OR STATUT LIKE :c");
     q.bindValue(":c", "%" + critere + "%");
     QSqlQueryModel *m = modelePour(q);
@@ -257,7 +257,7 @@ QSqlQueryModel* Formation::lister(const QString &critere, const QString &colonne
                   "NB_PLACES, NIVEAU, STATUT FROM FORMATION";
     bool filtre = !critere.trimmed().isEmpty();
     if (filtre)
-        sql += " WHERE TO_CHAR(ID) LIKE :c OR TITRE LIKE :c OR TYPE LIKE :c "
+        sql += " WHERE TITRE LIKE :c OR TYPE LIKE :c "
                "OR FORMATEUR LIKE :c OR LIEU LIKE :c OR STATUT LIKE :c";
     sql += " ORDER BY " + col + (croissant ? " ASC" : " DESC");
 
