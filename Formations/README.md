@@ -13,16 +13,9 @@ Pour une base existante, utiliser les migrations ci-dessous. Le script `2_creer_
 
 1. `11_compatibilite_formations.sql` prépare la séquence des formations et reprend les anciennes inscriptions lorsque la base contient la table historique `INSCRIPTION`.
 2. `10_migration_statut_inscription.sql` ajoute le statut « En attente » au schéma commun si nécessaire.
-3. `12_tables_module_formations.sql` crée les référentiels de types, de niveaux et de statuts.
-4. `13_resultats_inscription.sql` ajoute le référentiel des résultats et affiche les huit tables du module.
+2_creer_tables.sql` définit les huit tables communes : `AGENT`, `INCIDENT`,
+`VEHICULE`, `FORMATION`, `EQUIPEMENT`, `INTERVENTION`, `MOBILISATION` et
+`INSCRIRE`. Le module Formations utilise `FORMATION`, `AGENT` et `INSCRIRE`.
 
-| Table | Contenu |
-| --- | --- |
-| `FORMATION` | Sessions et identifiant automatique |
-| `AGENT` | Personnel partagé avec le module Personnel |
-| `INSCRIRE` | Inscriptions, présence et résultat. Clé composée de la formation et de l’agent |
-| `TYPE_FORMATION` | Types de formation |
-| `NIVEAU_FORMATION` | Niveaux de formation |
-| `STATUT_FORMATION` | Statuts des sessions |
-| `STATUT_INSCRIPTION` | Statuts des inscriptions |
-| `RESULTAT_INSCRIPTION` | Résultats possibles des inscriptions |
+Pour vérifier le nombre total de tables dans SQL Developer, exécuter
+`SELECT COUNT(*) FROM USER_TABLES;` avec la connexion `SMARTFIRE`.

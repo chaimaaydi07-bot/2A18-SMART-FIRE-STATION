@@ -215,17 +215,6 @@ QWidget* FormationsWindow::construireFormulaire()
     cbNiveau->addItems({"Débutant", "Intermédiaire", "Avancé"});
     cbStatut = new QComboBox;
     cbStatut->addItems({"Planifiée", "En cours", "Terminée", "Annulée"});
-    auto chargerReferentiel = [](QComboBox *liste, const QString &table) {
-        QSqlQuery query;
-        if (!query.exec("SELECT LIBELLE FROM " + table + " ORDER BY LIBELLE")) return;
-        while (query.next()) {
-            const QString libelle = query.value(0).toString();
-            if (liste->findText(libelle) < 0) liste->addItem(libelle);
-        }
-    };
-    chargerReferentiel(cbType, "TYPE_FORMATION");
-    chargerReferentiel(cbNiveau, "NIVEAU_FORMATION");
-    chargerReferentiel(cbStatut, "STATUT_FORMATION");
 
     deDebut = new QDateEdit(QDate::currentDate());
     deFin = new QDateEdit(QDate::currentDate().addDays(1));
