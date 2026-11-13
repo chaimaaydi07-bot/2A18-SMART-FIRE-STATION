@@ -13,7 +13,8 @@ Pour une base existante, utiliser les migrations ci-dessous. Le script `2_creer_
 
 1. `11_compatibilite_formations.sql` prépare la séquence des formations et reprend les anciennes inscriptions lorsque la base contient la table historique `INSCRIPTION`.
 2. `10_migration_statut_inscription.sql` ajoute le statut « En attente » au schéma commun si nécessaire.
-2_creer_tables.sql` définit les huit tables communes : `AGENT`, `INCIDENT`,
+
+`2_creer_tables.sql` définit les huit tables communes : `AGENT`, `INCIDENT`,
 `VEHICULE`, `FORMATION`, `EQUIPEMENT`, `INTERVENTION`, `MOBILISATION` et
 `INSCRIRE`. Le module Formations utilise `FORMATION`, `AGENT` et `INSCRIRE`.
 
