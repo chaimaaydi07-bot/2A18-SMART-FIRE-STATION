@@ -27,9 +27,9 @@ Connection& Connection::createInstance() {
 
 
 bool Connection::createConnection() {
-    db.setDatabaseName("SmartFireStation");// saisissez le nom de votre source de données ici
-    db.setUserName("smartfire");// saisissez votre nom d'utilisateur ici
-    db.setPassword("smartfire2026");// saisissez votre mot de passe utilisateur ici
+    db.setDatabaseName(qEnvironmentVariable("SMARTFIRE_ODBC_DSN", "SmartFireStation"));// saisissez le nom de votre source de données ici
+    db.setUserName(qEnvironmentVariable("SMARTFIRE_DB_USER", "smartfire"));// saisissez votre nom d'utilisateur ici
+    db.setPassword(qEnvironmentVariable("SMARTFIRE_DB_PASSWORD", "smartfire2026"));// saisissez votre mot de passe utilisateur ici
 
     if (db.open()) {
         qDebug() << "Connexion établie";

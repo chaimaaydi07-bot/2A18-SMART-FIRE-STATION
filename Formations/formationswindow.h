@@ -60,7 +60,8 @@ private:
     Formation Ftmp;
 
     // formulaire
-    QLineEdit *leId, *leTitre, *leFormateur, *leLieu;
+    int formationSelectionnee = 0;
+    QLineEdit *leTitre, *leFormateur, *leLieu;
     QComboBox *cbType, *cbNiveau, *cbStatut;
     QDateEdit *deDebut, *deFin;
     QSpinBox *sbDuree, *sbPlaces;

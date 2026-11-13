@@ -5,6 +5,8 @@
 #include <QPageSize>
 #include <QTextDocument>
 #include <QUuid>
+#include <QRegularExpression>
+#include <QRegularExpressionValidator>
 
 #include <algorithm>
 #include <vector>
@@ -677,6 +679,8 @@ private:
     QSpinBox *victimsInput = nullptr;
     QLineEdit *addressInput = nullptr;
     QLineEdit *codeInput = nullptr;
+    QLabel *addressError = nullptr;
+    QLabel *codeError = nullptr;
     QTextEdit *descriptionInput = nullptr;
     QComboBox *statusInput = nullptr;
 
@@ -905,10 +909,35 @@ private:
         addressInput = new QLineEdit;
         codeInput = new QLineEdit;
         codeInput->setMaxLength(20);
-        codeInput->setPlaceholderText("Ex. INC-2026-001 (facultatif, unique)");
+        codeInput->setPlaceholderText("Ex. INC-2026-001 (obligatoire)");
+        codeInput->setValidator(new QRegularExpressionValidator(
+            QRegularExpression("INC-[0-9]{4}-[0-9]{3}"), codeInput));
+        addressInput->setValidator(new QRegularExpressionValidator(
+            QRegularExpression(QStringLiteral("[\\p{L} ]*")), addressInput));
+        addressError = new QLabel;
+        codeError = new QLabel;
+        for (QLabel *label : {addressError, codeError}) {
+            label->setStyleSheet("color:#b42318;font-size:11px;");
+            label->setWordWrap(true);
+            label->hide();
+        }
+        connect(addressInput, &QLineEdit::textChanged, this, [this] {
+            addressError->hide();
+        });
+        connect(codeInput, &QLineEdit::textChanged, this, [this] {
+            codeError->hide();
+        });
+        connect(addressInput, &QLineEdit::inputRejected, this, [this] {
+            addressError->setText("L'adresse accepte uniquement des lettres et des espaces.");
+            addressError->show();
+        });
+        connect(codeInput, &QLineEdit::inputRejected, this, [this] {
+            codeError->setText("Format obligatoire : INC-2026-001 (INC-, année, 3 chiffres).");
+            codeError->show();
+        });
         addressInput->setMaxLength(150);
         addressInput->setPlaceholderText(
-            "Ex. Tunis, Centre-ville"
+            "Ex. Tunis Centre ville"
             );
 
         descriptionInput = new QTextEdit;
@@ -948,10 +977,9 @@ private:
             1, 1
             );
 
-        grid->addLayout(
-            createField("Adresse", addressInput),
-            2, 0, 1, 2
-            );
+        auto *addressField = createField("Adresse", addressInput);
+        addressField->addWidget(addressError);
+        grid->addLayout(addressField, 2, 0, 1, 2);
 
         grid->addLayout(
             createField("Description", descriptionInput),
@@ -964,7 +992,9 @@ private:
             );
 
         form->addLayout(grid);
-        grid->addLayout(createField("Code (unique)", codeInput), 5, 0, 1, 2);
+        auto *codeField = createField("Code unique (obligatoire)", codeInput);
+        codeField->addWidget(codeError);
+        grid->addLayout(codeField, 5, 0, 1, 2);
         form->addStretch();
 
         auto *formButtons = new QGridLayout;
@@ -1028,7 +1058,7 @@ private:
 
         searchInput = new QLineEdit;
         searchInput->setPlaceholderText(
-            "⌕ Rechercher par code, type, adresse ou ID..."
+            "⌕ Rechercher par code, type ou adresse..."
             );
 
         gravityFilter = new QComboBox;
@@ -1087,6 +1117,7 @@ private:
             QHeaderView::ResizeToContents
             );
 
+        table->setColumnHidden(0, true); // ID technique conservé pour les opérations CRUD.
         table->verticalHeader()->hide();
         table->setEditTriggers(
             QAbstractItemView::NoEditTriggers
@@ -1252,6 +1283,8 @@ private:
     void clearForm()
     {
         selectedId.clear();
+        addressError->hide();
+        codeError->hide();
         table->clearSelection();
 
         typeInput->setCurrentIndex(0);
@@ -1303,38 +1336,36 @@ private:
 
     bool validateForm()
     {
+        addressError->hide();
+        codeError->hide();
+        const QString adresse = addressInput->text().trimmed();
         const QString code = codeInput->text().trimmed();
-        if (code.toUtf8().size() > 20) {
-            QMessageBox::warning(this, "Code trop long",
-                                 "Le code ne doit pas dépasser 20 octets.");
-            codeInput->setFocus();
-            return false;
+        int letters = 0;
+        for (const QChar character : adresse) {
+            if (character.isLetter()) ++letters;
         }
-        const QString adresse =
-            addressInput->text().trimmed();
-
-        if (adresse.isEmpty()) {
-            QMessageBox::warning(
-                this,
-                "Adresse manquante",
-                "Veuillez saisir l'adresse de l'incident."
-                );
-
-            addressInput->setFocus();
-            return false;
+        bool valid = true;
+        if (!addressInput->hasAcceptableInput() || letters < 3 ||
+            adresse.toUtf8().size() > 150) {
+            addressError->setText("Saisissez au moins 3 lettres, uniquement des lettres et des espaces (150 octets maximum).");
+            addressError->show();
+            valid = false;
         }
-
-        if (adresse.toUtf8().size() > 150) {
-            QMessageBox::warning(
-                this,
-                "Adresse trop longue",
-                "L'adresse dépasse 150 octets. "
-                "Raccourcissez-la, notamment si elle contient des accents."
-                );
-
-            addressInput->setFocus();
-            return false;
+        if (code.isEmpty() || !codeInput->hasAcceptableInput()) {
+            codeError->setText("Veuillez saisir un code unique au format INC-2026-001.");
+            codeError->show();
+            valid = false;
+        } else {
+            for (const Incident &existing : incidents) {
+                if (existing.getCode() == code && existing.getId() != selectedId) {
+                    codeError->setText("Ce code est déjà utilisé. Saisissez un autre code unique.");
+                    codeError->show();
+                    valid = false;
+                    break;
+                }
+            }
         }
+        if (!valid) return false;
 
         const QString description =
             descriptionInput->toPlainText().trimmed();
@@ -1372,6 +1403,13 @@ private:
         const QString &detail
         )
     {
+        if (detail.contains("code", Qt::CaseInsensitive) &&
+            detail.contains("déjà", Qt::CaseInsensitive)) {
+            codeError->setText(detail);
+            codeError->show();
+            codeInput->setFocus();
+            return;
+        }
         QMessageBox::critical(
             this,
             "Erreur Oracle",

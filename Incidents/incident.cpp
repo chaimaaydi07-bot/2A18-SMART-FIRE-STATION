@@ -3,6 +3,7 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlError>
+#include <QRegularExpression>
 #include <utility>
 
 Incident::Incident()
@@ -174,9 +175,32 @@ bool Incident::executer(const QString &sql,
     return true;
 }
 
+
+// Même contrôle pour toute écriture, y compris hors du formulaire.
+static bool validerSaisieIncident(const Incident &incident, QString &erreur)
+{
+    const QString adresse = incident.getAddress().trimmed();
+    int lettres = 0;
+    for (const QChar caractere : adresse) {
+        if (caractere.isLetter()) ++lettres;
+    }
+    if (!QRegularExpression(QStringLiteral("^[\\p{L} ]+$")).match(adresse).hasMatch()
+        || lettres < 3 || adresse.toUtf8().size() > 150) {
+        erreur = "Adresse invalide : au moins 3 lettres, uniquement des lettres et des espaces.";
+        return false;
+    }
+    if (!QRegularExpression("^INC-[0-9]{4}-[0-9]{3}$")
+             .match(incident.getCode().trimmed()).hasMatch()) {
+        erreur = "Code obligatoire au format INC-2026-001.";
+        return false;
+    }
+    return true;
+}
+
 // CREATE : ajouter un incident.
 bool Incident::ajouter(QString &erreur) const
 {
+    if (!validerSaisieIncident(*this, erreur)) return false;
     const QString sql =
         "INSERT INTO INCIDENT "
         "(id_incident, type, date_heure, adresse, "
@@ -270,6 +294,7 @@ bool Incident::afficher(std::vector<Incident> &liste,
 // UPDATE : modifier un incident.
 bool Incident::modifier(QString &erreur) const
 {
+    if (!validerSaisieIncident(*this, erreur)) return false;
     const QString sql =
         "UPDATE INCIDENT SET "
         "type = ?, "

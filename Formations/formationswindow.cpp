@@ -12,7 +12,8 @@
 #include <QDialog>
 #include <QCalendarWidget>
 #include <QTextCharFormat>
-#include <QIntValidator>
+#include <QSqlQuery>
+#include <QSqlError>
 #include <QRegularExpressionValidator>
 #include <QStatusBar>
 #include <QGraphicsDropShadowEffect>
@@ -128,7 +129,7 @@ QAbstractItemModel* FormationsWindow::modeleApercu(const QString &critere) const
 {
     QStandardItemModel *m = new QStandardItemModel;
     for (const QStringList &r : demo) {
-        if (!critere.isEmpty() && !r.join(' ').contains(critere, Qt::CaseInsensitive)) continue;
+        if (!critere.isEmpty() && !r.mid(1).join(' ').contains(critere, Qt::CaseInsensitive)) continue;
         QList<QStandardItem*> ligne;
         for (const QString &v : r) ligne << new QStandardItem(v);
         m->appendRow(ligne);
@@ -224,7 +225,6 @@ QWidget* FormationsWindow::construireSidebar()
     struct Item { const char *texte; bool actif; };
     const Item items[] = {
         {"⚠  Incidents", false},
-        {"▪  Gestion des bâtiments\n    à risque", false},
         {"👤  Personnel", false},
         {"🚒  Véhicules", false},
         {"🛠  Équipements", false},
@@ -264,10 +264,6 @@ QWidget* FormationsWindow::construireFormulaire()
     l->addWidget(t);
     l->addWidget(st);
 
-    leId = new QLineEdit;
-    leId->setPlaceholderText("Généré automatiquement");
-    leId->setValidator(new QIntValidator(1, 999999, this));
-    leId->setReadOnly(true);
     leTitre = new QLineEdit;
     leTitre->setPlaceholderText("Ex. Premiers secours PSC1");
     leFormateur = new QLineEdit;
@@ -283,6 +279,17 @@ QWidget* FormationsWindow::construireFormulaire()
     cbNiveau->addItems({"Débutant", "Intermédiaire", "Avancé"});
     cbStatut = new QComboBox;
     cbStatut->addItems({"Planifiée", "En cours", "Terminée", "Annulée"});
+    auto chargerReferentiel = [](QComboBox *liste, const QString &table) {
+        QSqlQuery query;
+        if (!query.exec("SELECT LIBELLE FROM " + table + " ORDER BY LIBELLE")) return;
+        while (query.next()) {
+            const QString libelle = query.value(0).toString();
+            if (liste->findText(libelle) < 0) liste->addItem(libelle);
+        }
+    };
+    chargerReferentiel(cbType, "TYPE_FORMATION");
+    chargerReferentiel(cbNiveau, "NIVEAU_FORMATION");
+    chargerReferentiel(cbStatut, "STATUT_FORMATION");
 
     deDebut = new QDateEdit(QDate::currentDate());
     deFin = new QDateEdit(QDate::currentDate().addDays(1));
@@ -293,8 +300,7 @@ QWidget* FormationsWindow::construireFormulaire()
     QGridLayout *g = new QGridLayout;
     g->setHorizontalSpacing(14);
     g->setVerticalSpacing(10);
-    g->addWidget(champ("Identifiant", leId), 0, 0);
-    g->addWidget(champ("Statut", cbStatut), 0, 1);
+    g->addWidget(champ("Statut", cbStatut), 0, 0, 1, 2);
     g->addWidget(champ("Titre de la formation", leTitre), 1, 0, 1, 2);
     g->addWidget(champ("Type de formation", cbType), 2, 0);
     g->addWidget(champ("Niveau", cbNiveau), 2, 1);
@@ -372,9 +378,10 @@ QWidget* FormationsWindow::construireListe()
 
     // recherche + filtre
     leRecherche = new QLineEdit;
-    leRecherche->setPlaceholderText("🔎 Rechercher par titre, type, formateur ou ID...");
+    leRecherche->setPlaceholderText("🔎 Rechercher par titre, type, formateur...");
     cbFiltre = new QComboBox;
-    cbFiltre->addItems({"Tous niveaux", "Débutant", "Intermédiaire", "Avancé"});
+    cbFiltre->addItem("Tous niveaux");
+    for (int i = 0; i < cbNiveau->count(); ++i) cbFiltre->addItem(cbNiveau->itemText(i));
     QHBoxLayout *r1 = new QHBoxLayout;
     r1->addWidget(leRecherche, 1);
     r1->addWidget(cbFiltre);
@@ -403,8 +410,8 @@ QWidget* FormationsWindow::construireListe()
     l->addLayout(r2);
 
     // tableau
-    table = new QTableWidget(0, 7);
-    table->setHorizontalHeaderLabels({"ID", "TITRE", "TYPE", "DÉBUT", "NIVEAU", "STATUT", "ACTION"});
+    table = new QTableWidget(0, 6);
+    table->setHorizontalHeaderLabels({"TITRE", "TYPE", "DÉBUT", "NIVEAU", "STATUT", "ACTION"});
     table->verticalHeader()->setVisible(false);
     table->verticalHeader()->setDefaultSectionSize(44);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -414,8 +421,7 @@ QWidget* FormationsWindow::construireListe()
     table->setShowGrid(false);
     QHeaderView *hh = table->horizontalHeader();
     hh->setSectionResizeMode(QHeaderView::Stretch);
-    hh->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    hh->setSectionResizeMode(6, QHeaderView::ResizeToContents);
+    hh->setSectionResizeMode(5, QHeaderView::ResizeToContents);
     l->addWidget(table, 1);
 
     // alerte de priorite
@@ -471,11 +477,11 @@ void FormationsWindow::rafraichir()
         const int id = val(0).toInt();
         const QDate d = QDate::fromString(val(3), "yyyy-MM-dd");
 
-        const QStringList cellules = {QString("FOR-%1").arg(id, 3, 10, QChar('0')), val(1), val(2),
+        const QStringList cellules = {val(1), val(2),
                                       d.toString("dd/MM/yyyy"), niveau, val(10)};
         for (int c = 0; c < cellules.size(); ++c) {
             QTableWidgetItem *it = new QTableWidgetItem(cellules[c]);
-            if (c == 4) {   // couleur du niveau, comme la gravite des incidents
+            if (c == 3) {   // couleur du niveau, comme la gravite des incidents
                 if (niveau == "Avancé")             { it->setBackground(QColor("#fbd5d5")); it->setForeground(QColor("#b3202e")); }
                 else if (niveau == "Intermédiaire") { it->setBackground(QColor("#fde7c8")); it->setForeground(QColor("#a65f00")); }
                 else                                { it->setBackground(QColor("#d6f1de")); it->setForeground(QColor("#1b7a3a")); }
@@ -505,7 +511,7 @@ void FormationsWindow::rafraichir()
         connect(bVoir, &QPushButton::clicked, this, [this, id]() { on_voir(id); });
         connect(bModif, &QPushButton::clicked, this, [this, id]() { on_modifierLigne(id); });
         connect(bSupp, &QPushButton::clicked, this, [this, id]() { on_supprimer(id); });
-        table->setCellWidget(row, 6, actions);
+        table->setCellWidget(row, 5, actions);
         ++n;
     }
     delete m;
@@ -518,15 +524,14 @@ void FormationsWindow::majAlerte()
 {
     if (modeApercu) {
         lbAlerteTexte->setText("2 formation(s) commence(nt) dans les 7 prochains jours (démo).");
-        lbAlerteDetail->setText("FOR-001 — Premiers secours PSC1 — Salle A");
+        lbAlerteDetail->setText("Premiers secours PSC1 — Salle A");
         return;
     }
     QSqlQueryModel *m = Ftmp.prochaines(7);
     int n = m->rowCount();
     QString premiere;
     if (n > 0)
-        premiere = QString("FOR-%1 — %2 — %3")
-                       .arg(m->data(m->index(0, 0)).toInt(), 3, 10, QChar('0'))
+        premiere = QString("%1 — %2")
                        .arg(m->data(m->index(0, 1)).toString(),
                             m->data(m->index(0, 3)).toString());
     delete m;
@@ -567,7 +572,7 @@ bool FormationsWindow::controleSaisie(QString &erreur)
 
 Formation FormationsWindow::lireFormulaire() const
 {
-    return Formation(leId->text().toInt(), leTitre->text().trimmed(), cbType->currentText(),
+    return Formation(formationSelectionnee, leTitre->text().trimmed(), cbType->currentText(),
                      deDebut->date(), deFin->date(), sbDuree->value(),
                      leFormateur->text().trimmed(), leLieu->text().trimmed(),
                      sbPlaces->value(), cbNiveau->currentText(), cbStatut->currentText());
@@ -592,8 +597,7 @@ void FormationsWindow::on_ajouter()
         f.setId(prochainId);
         demo << ligneDemo(f);
         rafraichir();
-        QMessageBox::information(this, "Succès", QString("Formation FOR-%1 ajoutée (mode aperçu).")
-                                     .arg(f.getId(), 3, 10, QChar('0')));
+        QMessageBox::information(this, "Succès", "Formation ajoutée (mode aperçu).");
         on_vider();
         return;
     }
@@ -603,8 +607,7 @@ void FormationsWindow::on_ajouter()
     }
     if (f.ajouter()) {
         rafraichir();
-        QMessageBox::information(this, "Succès", QString("Formation FOR-%1 ajoutée.")
-                                     .arg(f.getId(), 3, 10, QChar('0')));
+        QMessageBox::information(this, "Succès", "Formation ajoutée.");
         on_vider();
     } else {
         QMessageBox::critical(this, "Erreur Oracle", "Échec de l'ajout :\n" + Formation::derniereErreur());
@@ -613,7 +616,7 @@ void FormationsWindow::on_ajouter()
 
 void FormationsWindow::on_modifier()
 {
-    if (leId->text().isEmpty()) {
+    if (formationSelectionnee == 0) {
         QMessageBox::warning(this, "Modification", "Sélectionnez une formation dans la liste avant de la modifier.");
         return;
     }
@@ -622,7 +625,7 @@ void FormationsWindow::on_modifier()
     Formation f = lireFormulaire();
     if (modeApercu) {
         int i = demoIndex(f.getId());
-        if (i < 0) { QMessageBox::warning(this, "Introuvable", "Aucune formation avec cet identifiant.\nCliquez sur « Voir » dans la liste."); return; }
+        if (i < 0) { QMessageBox::warning(this, "Introuvable", "Cette formation est introuvable.\nCliquez sur « Voir » dans la liste."); return; }
         for (int j = 0; j < demo.size(); ++j) {
             if (j != i && demo[j][1].trimmed().compare(f.getTitre().trimmed(), Qt::CaseInsensitive) == 0) {
                 QMessageBox::warning(this, "Titre déjà utilisé", "Une autre formation porte déjà ce titre.");
@@ -635,7 +638,7 @@ void FormationsWindow::on_modifier()
         return;
     }
     if (!f.existe(f.getId())) {
-        QMessageBox::warning(this, "Introuvable", "Aucune formation avec cet identifiant.\nCliquez sur « Voir » dans la liste.");
+        QMessageBox::warning(this, "Introuvable", "Cette formation est introuvable.\nCliquez sur « Voir » dans la liste.");
         return;
     }
     if (f.titreExiste(f.getTitre(), f.getId())) {
@@ -665,7 +668,7 @@ void FormationsWindow::on_modifierLigne(int id)
     }
 
     QDialog dlg(this);
-    dlg.setWindowTitle(QString("Modifier la formation FOR-%1").arg(id, 3, 10, QChar('0')));
+    dlg.setWindowTitle("Modifier la formation");
     dlg.setMinimumWidth(420);
     QFormLayout *fl = new QFormLayout(&dlg);
 
@@ -733,33 +736,33 @@ void FormationsWindow::on_modifierLigne(int id)
     else QMessageBox::critical(this, "Erreur Oracle", "Échec de la modification :\n" + Formation::derniereErreur());
 }
 
-// Bouton « Supprimer » du formulaire : supprime la formation dont l'identifiant est saisi
+// Supprime la formation sélectionnée dans la liste.
 void FormationsWindow::on_supprimerForm()
 {
-    if (leId->text().isEmpty()) {
-        QMessageBox::warning(this, "Suppression", "Saisissez un identifiant ou cliquez sur « Voir » dans la liste.");
+    if (formationSelectionnee == 0) {
+        QMessageBox::warning(this, "Suppression", "Cliquez sur « Voir » dans la liste pour sélectionner une formation.");
         return;
     }
-    const int id = leId->text().toInt();
+    const int id = formationSelectionnee;
     const bool existe = modeApercu ? demoIndex(id) >= 0 : Ftmp.existe(id);
-    if (!existe) { QMessageBox::warning(this, "Introuvable", "Aucune formation avec cet identifiant."); return; }
+    if (!existe) { QMessageBox::warning(this, "Introuvable", "Cette formation est introuvable."); return; }
     on_supprimer(id);
 }
 
 void FormationsWindow::on_supprimer(int id)
 {
     if (QMessageBox::question(this, "Confirmation",
-            QString("Supprimer la formation FOR-%1 ?").arg(id, 3, 10, QChar('0'))) != QMessageBox::Yes)
+            "Supprimer cette formation ?") != QMessageBox::Yes)
         return;
     if (modeApercu) {
         int i = demoIndex(id);
         if (i >= 0) demo.removeAt(i);
-        if (leId->text().toInt() == id) on_vider();
+        if (formationSelectionnee == id) on_vider();
         rafraichir();
         return;
     }
     if (Ftmp.supprimer(id)) {
-        if (leId->text().toInt() == id) on_vider();
+        if (formationSelectionnee == id) on_vider();
         rafraichir();
     } else {
         QMessageBox::critical(this, "Erreur Oracle", "Échec de la suppression :\n" + Formation::derniereErreur());
@@ -774,7 +777,7 @@ void FormationsWindow::on_voir(int id)
         int i = demoIndex(id);
         if (i < 0) return;
         const QStringList &r = demo[i];
-        leId->setText(r[0]); leTitre->setText(r[1]); cbType->setCurrentText(r[2]);
+        formationSelectionnee = id; leTitre->setText(r[1]); cbType->setCurrentText(r[2]);
         deDebut->setDate(QDate::fromString(r[3], "yyyy-MM-dd")); deFin->setDate(QDate::fromString(r[4], "yyyy-MM-dd"));
         sbDuree->setValue(r[5].toInt()); leFormateur->setText(r[6]); leLieu->setText(r[7]);
         sbPlaces->setValue(r[8].toInt()); cbNiveau->setCurrentText(r[9]); cbStatut->setCurrentText(r[10]);
@@ -782,7 +785,7 @@ void FormationsWindow::on_voir(int id)
     }
     Formation f;
     if (!f.recuperer(id)) return;
-    leId->setText(QString::number(id));
+    formationSelectionnee = id;
     leTitre->setText(f.getTitre());
     cbType->setCurrentText(f.getType());
     deDebut->setDate(f.getDateDebut());
@@ -799,7 +802,7 @@ void FormationsWindow::on_voir(int id)
 
 void FormationsWindow::on_vider()
 {
-    leId->clear(); leTitre->clear(); leFormateur->clear(); leLieu->clear();
+    formationSelectionnee = 0; leTitre->clear(); leFormateur->clear(); leLieu->clear();
     sbDuree->setValue(0); sbPlaces->setValue(0);
     deDebut->setDate(QDate::currentDate());
     deFin->setDate(QDate::currentDate().addDays(1));
@@ -837,14 +840,14 @@ void FormationsWindow::on_pdf()
     p.setFont(QFont("Arial", 9));
     p.drawText(650, 520, "Édité le " + QDate::currentDate().toString("dd/MM/yyyy"));
 
-    const QStringList titres = {"ID", "Titre", "Type", "Début", "Fin", "Durée", "Formateur", "Lieu", "Statut"};
-    const int cols[] = {0, 1, 2, 3, 4, 5, 6, 7, 10};
-    const int larg[] = {500, 2300, 1600, 1200, 1200, 700, 1800, 1500, 1200};
+    const QStringList titres = {"Titre", "Type", "Début", "Fin", "Durée", "Formateur", "Lieu", "Statut"};
+    const int cols[] = {1, 2, 3, 4, 5, 6, 7, 10};
+    const int larg[] = {2300, 1600, 1200, 1200, 700, 1800, 1500, 1200};
     int y = 900, x = 300;
 
     p.setFont(QFont("Arial", 9, QFont::Bold));
     p.setBrush(QColor("#6d1220"));
-    for (int i = 0; i < 9; ++i) {
+    for (int i = 0; i < titres.size(); ++i) {
         p.setPen(Qt::black);
         p.drawRect(x, y, larg[i], 350);
         p.setPen(Qt::white);
@@ -859,7 +862,7 @@ void FormationsWindow::on_pdf()
     for (int r = 0; r < m->rowCount(); ++r) {
         if (y > pdf.height() - 600) { pdf.newPage(); y = 400; }
         x = 300;
-        for (int i = 0; i < 9; ++i) {
+        for (int i = 0; i < titres.size(); ++i) {
             p.drawRect(x, y, larg[i], 300);
             p.drawText(QRect(x + 20, y, larg[i] - 40, 300), Qt::AlignVCenter, m->data(m->index(r, cols[i])).toString());
             x += larg[i];
@@ -983,12 +986,22 @@ void FormationsWindow::on_gestionInscriptions()
     layout->addWidget(intro);
 
     QGridLayout *form = new QGridLayout;
-    QSpinBox *idFormation = new QSpinBox;
-    idFormation->setRange(1, 999999999);
-    idFormation->setPrefix("Formation #");
-    QSpinBox *idAgent = new QSpinBox;
-    idAgent->setRange(1, 999999999);
-    idAgent->setPrefix("Agent #");
+    auto *formationChoisie = new QComboBox;
+    auto *agentChoisi = new QComboBox;
+    QStringList erreursCatalogue;
+    auto chargerChoix = [&](QComboBox *liste, const QString &sql) {
+        QSqlQuery query;
+        if (!query.exec(sql)) {
+            erreursCatalogue << query.lastError().text();
+            return;
+        }
+        while (query.next())
+            liste->addItem(query.value(1).toString(), query.value(0));
+    };
+    chargerChoix(formationChoisie, "SELECT ID, TITRE FROM FORMATION ORDER BY TITRE");
+    chargerChoix(agentChoisi, "SELECT ID_AGENT, NOM || ' ' || PRENOM || NVL2(SPECIALITE, ' (' || SPECIALITE || ')', '') "
+                              "FROM AGENT ORDER BY NOM, PRENOM, SPECIALITE");
+    formationChoisie->setCurrentIndex(formationChoisie->findData(formationSelectionnee));
     QDateEdit *dateInscription = new QDateEdit(QDate::currentDate());
     dateInscription->setCalendarPopup(true);
     dateInscription->setDisplayFormat("dd/MM/yyyy");
@@ -1005,8 +1018,8 @@ void FormationsWindow::on_gestionInscriptions()
     resultat->addItem("En attente", "EN_ATTENTE");
     resultat->addItem("Réussi", "REUSSI");
     resultat->addItem("Échec", "ECHEC");
-    form->addWidget(champ("Identifiant formation", idFormation), 0, 0);
-    form->addWidget(champ("Identifiant agent", idAgent), 0, 1);
+    form->addWidget(champ("Formation", formationChoisie), 0, 0);
+    form->addWidget(champ("Agent", agentChoisi), 0, 1);
     form->addWidget(champ("Date d'inscription", dateInscription), 0, 2);
     form->addWidget(champ("Statut", statutInscription), 1, 0);
     form->addWidget(champ("Présence", presence), 1, 1);
@@ -1014,7 +1027,7 @@ void FormationsWindow::on_gestionInscriptions()
     layout->addLayout(form);
 
     QTableWidget *tableInscriptions = new QTableWidget(0, 6);
-    tableInscriptions->setHorizontalHeaderLabels({"ID formation", "ID agent", "Date d'inscription",
+    tableInscriptions->setHorizontalHeaderLabels({"Formation", "Agent", "Date d'inscription",
                                                   "Statut", "Présence", "Résultat"});
     tableInscriptions->setEditTriggers(QAbstractItemView::NoEditTriggers);
     tableInscriptions->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -1048,15 +1061,28 @@ void FormationsWindow::on_gestionInscriptions()
     auto rafraichirInscriptions = [&]() {
         QSqlQueryModel *model = Inscription().afficher();
         tableInscriptions->setRowCount(0);
+        while (model->canFetchMore()) model->fetchMore();
         for (int row = 0; row < model->rowCount(); ++row) {
             tableInscriptions->insertRow(row);
-            for (int column = 0; column < model->columnCount(); ++column) {
+            const int colonnesModele[] = {6, 7, 2, 3, 4, 5};
+            for (int column = 0; column < tableInscriptions->columnCount(); ++column) {
                 QTableWidgetItem *item = new QTableWidgetItem(
-                    model->data(model->index(row, column)).toString());
+                    model->data(model->index(row, colonnesModele[column])).toString());
+                if (column < 2)
+                    item->setData(Qt::UserRole, model->data(model->index(row, column)));
+                if (column == 3 || column == 4 || column == 5) {
+                    const QString code = item->text();
+                    item->setData(Qt::UserRole, code);
+                    QComboBox *choix = column == 3 ? statutInscription : column == 4 ? presence : resultat;
+                    const QVariant valeur = column == 4 ? QVariant(code.isEmpty() ? -1 : code.toInt()) : QVariant(code);
+                    item->setText(choix->itemText(choix->findData(valeur)));
+                }
                 tableInscriptions->setItem(row, column, item);
             }
         }
-        if (!Inscription::derniereErreur().isEmpty())
+        if (!erreursCatalogue.isEmpty())
+            etat->setText("Erreur Oracle : " + erreursCatalogue.join("\n"));
+        else if (!Inscription::derniereErreur().isEmpty())
             etat->setText("Erreur Oracle : " + Inscription::derniereErreur());
         else
             etat->setText(QString("%1 inscription(s) chargée(s) depuis Oracle.").arg(model->rowCount()));
@@ -1065,18 +1091,22 @@ void FormationsWindow::on_gestionInscriptions()
 
     connect(tableInscriptions, &QTableWidget::itemSelectionChanged, &dlg, [&]() {
         const int row = tableInscriptions->currentRow();
-        if (row < 0) return;
-        idFormation->setValue(tableInscriptions->item(row, 0)->text().toInt());
-        idAgent->setValue(tableInscriptions->item(row, 1)->text().toInt());
+        if (!tableInscriptions->item(row, 0)) return;
+        formationChoisie->setCurrentIndex(formationChoisie->findData(tableInscriptions->item(row, 0)->data(Qt::UserRole).toInt()));
+        agentChoisi->setCurrentIndex(agentChoisi->findData(tableInscriptions->item(row, 1)->data(Qt::UserRole).toInt()));
         const QDate value = QDate::fromString(tableInscriptions->item(row, 2)->text(), "yyyy-MM-dd");
         if (value.isValid()) dateInscription->setDate(value);
-        statutInscription->setCurrentIndex(statutInscription->findData(tableInscriptions->item(row, 3)->text()));
-        const QString presenceText = tableInscriptions->item(row, 4)->text();
+        statutInscription->setCurrentIndex(statutInscription->findData(tableInscriptions->item(row, 3)->data(Qt::UserRole)));
+        const QString presenceText = tableInscriptions->item(row, 4)->data(Qt::UserRole).toString();
         presence->setCurrentIndex(presence->findData(presenceText.isEmpty() ? -1 : presenceText.toInt()));
-        resultat->setCurrentIndex(resultat->findData(tableInscriptions->item(row, 5)->text()));
+        resultat->setCurrentIndex(resultat->findData(tableInscriptions->item(row, 5)->data(Qt::UserRole)));
     });
     connect(ajouter, &QPushButton::clicked, &dlg, [&]() {
-        Inscription inscription(idFormation->value(), idAgent->value(), dateInscription->date(),
+        if (formationChoisie->currentIndex() < 0 || agentChoisi->currentIndex() < 0) {
+            etat->setText("Choisissez une formation et un agent.");
+            return;
+        }
+        Inscription inscription(formationChoisie->currentData().toInt(), agentChoisi->currentData().toInt(), dateInscription->date(),
                                statutInscription->currentData().toString(),
                                presence->currentData().toInt(), resultat->currentData().toString());
         const bool ok = inscription.ajouter();
@@ -1086,13 +1116,19 @@ void FormationsWindow::on_gestionInscriptions()
                          : "Échec de l'ajout : " + erreur);
     });
     connect(modifier, &QPushButton::clicked, &dlg, [&]() {
-        if (tableInscriptions->currentRow() < 0) {
+        const int ligne = tableInscriptions->currentRow();
+        if (tableInscriptions->selectedItems().isEmpty()) {
             etat->setText("Sélectionnez une inscription dans le tableau.");
             return;
         }
-        Inscription inscription(idFormation->value(), idAgent->value(), dateInscription->date(),
+        Inscription inscription(formationChoisie->currentData().toInt(), agentChoisi->currentData().toInt(), dateInscription->date(),
                                statutInscription->currentData().toString(),
                                presence->currentData().toInt(), resultat->currentData().toString());
+        if (formationChoisie->currentData().toInt() != tableInscriptions->item(ligne, 0)->data(Qt::UserRole).toInt()
+            || agentChoisi->currentData().toInt() != tableInscriptions->item(ligne, 1)->data(Qt::UserRole).toInt()) {
+            etat->setText("Pour inscrire un autre agent ou choisir une autre formation, utilisez Ajouter l'inscription.");
+            return;
+        }
         const bool ok = inscription.modifier();
         const QString erreur = Inscription::derniereErreur();
         rafraichirInscriptions();
@@ -1100,11 +1136,13 @@ void FormationsWindow::on_gestionInscriptions()
                          : "Échec de la modification : " + erreur);
     });
     connect(supprimer, &QPushButton::clicked, &dlg, [&]() {
-        if (tableInscriptions->currentRow() < 0) {
+        if (tableInscriptions->selectedItems().isEmpty()) {
             etat->setText("Sélectionnez une inscription dans le tableau.");
             return;
         }
-        Inscription inscription(idFormation->value(), idAgent->value());
+        const int ligne = tableInscriptions->currentRow();
+        Inscription inscription(tableInscriptions->item(ligne, 0)->data(Qt::UserRole).toInt(),
+                                tableInscriptions->item(ligne, 1)->data(Qt::UserRole).toInt());
         const bool ok = inscription.supprimer();
         const QString erreur = Inscription::derniereErreur();
         rafraichirInscriptions();

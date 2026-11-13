@@ -116,7 +116,7 @@ bool Formation::modifier()
     q.bindValue(":statut", statut);
     if (!executer(q)) return false;
     if (q.numRowsAffected() == 0) {
-        g_erreur = "Aucune formation ne correspond à cet identifiant.";
+        g_erreur = "Cette formation est introuvable.";
         return false;
     }
     return true;
@@ -129,7 +129,7 @@ bool Formation::supprimer(int idSup)
     q.bindValue(":id", idSup);
     if (!executer(q)) return false;
     if (q.numRowsAffected() == 0) {
-        g_erreur = "Aucune formation ne correspond à cet identifiant.";
+        g_erreur = "Cette formation est introuvable.";
         return false;
     }
     return true;
@@ -159,7 +159,7 @@ QSqlQueryModel* Formation::rechercher(const QString &critere)
     QSqlQuery q;
     q.prepare("SELECT ID, TITRE, TYPE, TO_CHAR(DATE_DEBUT,'YYYY-MM-DD') AS DATE_DEBUT, TO_CHAR(DATE_FIN,'YYYY-MM-DD') AS DATE_FIN, DUREE, FORMATEUR, "
               "LIEU, NB_PLACES, NIVEAU, STATUT FROM FORMATION "
-              "WHERE TO_CHAR(ID) LIKE :c OR TITRE LIKE :c OR TYPE LIKE :c "
+              "WHERE TITRE LIKE :c OR TYPE LIKE :c "
               "OR FORMATEUR LIKE :c OR LIEU LIKE :c OR STATUT LIKE :c");
     q.bindValue(":c", "%" + critere + "%");
     QSqlQueryModel *m = modelePour(q);
@@ -240,7 +240,7 @@ bool Formation::enregistrerPresence(int idFormation, int idAgent)
     q.bindValue(":a", idAgent);
     if (!executer(q)) return false;
     if (q.numRowsAffected() == 0) {
-        g_erreur = "Aucune inscription ne correspond à ces identifiants.";
+        g_erreur = "Cette inscription est introuvable.";
         return false;
     }
     return true;
@@ -257,7 +257,7 @@ QSqlQueryModel* Formation::lister(const QString &critere, const QString &colonne
                   "NB_PLACES, NIVEAU, STATUT FROM FORMATION";
     bool filtre = !critere.trimmed().isEmpty();
     if (filtre)
-        sql += " WHERE TO_CHAR(ID) LIKE :c OR TITRE LIKE :c OR TYPE LIKE :c "
+        sql += " WHERE TITRE LIKE :c OR TYPE LIKE :c "
                "OR FORMATEUR LIKE :c OR LIEU LIKE :c OR STATUT LIKE :c";
     sql += " ORDER BY " + col + (croissant ? " ASC" : " DESC");
 
