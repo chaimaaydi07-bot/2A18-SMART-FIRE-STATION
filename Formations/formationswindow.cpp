@@ -225,7 +225,6 @@ QWidget* FormationsWindow::construireSidebar()
     struct Item { const char *texte; bool actif; };
     const Item items[] = {
         {"⚠  Incidents", false},
-        {"▪  Gestion des bâtiments\n    à risque", false},
         {"👤  Personnel", false},
         {"🚒  Véhicules", false},
         {"🛠  Équipements", false},
@@ -1027,11 +1026,9 @@ void FormationsWindow::on_gestionInscriptions()
     form->addWidget(champ("Résultat", resultat), 1, 2);
     layout->addLayout(form);
 
-    QTableWidget *tableInscriptions = new QTableWidget(0, 8);
-    tableInscriptions->setHorizontalHeaderLabels({"ID formation", "ID agent", "Date d'inscription",
-                                                  "Statut", "Présence", "Résultat", "Formation", "Agent"});
-    tableInscriptions->setColumnHidden(0, true);
-    tableInscriptions->setColumnHidden(1, true);
+    QTableWidget *tableInscriptions = new QTableWidget(0, 6);
+    tableInscriptions->setHorizontalHeaderLabels({"Formation", "Agent", "Date d'inscription",
+                                                  "Statut", "Présence", "Résultat"});
     tableInscriptions->setEditTriggers(QAbstractItemView::NoEditTriggers);
     tableInscriptions->setSelectionBehavior(QAbstractItemView::SelectRows);
     tableInscriptions->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -1067,9 +1064,12 @@ void FormationsWindow::on_gestionInscriptions()
         while (model->canFetchMore()) model->fetchMore();
         for (int row = 0; row < model->rowCount(); ++row) {
             tableInscriptions->insertRow(row);
-            for (int column = 0; column < model->columnCount(); ++column) {
+            const int colonnesModele[] = {6, 7, 2, 3, 4, 5};
+            for (int column = 0; column < tableInscriptions->columnCount(); ++column) {
                 QTableWidgetItem *item = new QTableWidgetItem(
-                    model->data(model->index(row, column)).toString());
+                    model->data(model->index(row, colonnesModele[column])).toString());
+                if (column < 2)
+                    item->setData(Qt::UserRole, model->data(model->index(row, column)));
                 if (column == 3 || column == 4 || column == 5) {
                     const QString code = item->text();
                     item->setData(Qt::UserRole, code);
@@ -1092,8 +1092,8 @@ void FormationsWindow::on_gestionInscriptions()
     connect(tableInscriptions, &QTableWidget::itemSelectionChanged, &dlg, [&]() {
         const int row = tableInscriptions->currentRow();
         if (!tableInscriptions->item(row, 0)) return;
-        formationChoisie->setCurrentIndex(formationChoisie->findData(tableInscriptions->item(row, 0)->text().toInt()));
-        agentChoisi->setCurrentIndex(agentChoisi->findData(tableInscriptions->item(row, 1)->text().toInt()));
+        formationChoisie->setCurrentIndex(formationChoisie->findData(tableInscriptions->item(row, 0)->data(Qt::UserRole).toInt()));
+        agentChoisi->setCurrentIndex(agentChoisi->findData(tableInscriptions->item(row, 1)->data(Qt::UserRole).toInt()));
         const QDate value = QDate::fromString(tableInscriptions->item(row, 2)->text(), "yyyy-MM-dd");
         if (value.isValid()) dateInscription->setDate(value);
         statutInscription->setCurrentIndex(statutInscription->findData(tableInscriptions->item(row, 3)->data(Qt::UserRole)));
@@ -1124,8 +1124,8 @@ void FormationsWindow::on_gestionInscriptions()
         Inscription inscription(formationChoisie->currentData().toInt(), agentChoisi->currentData().toInt(), dateInscription->date(),
                                statutInscription->currentData().toString(),
                                presence->currentData().toInt(), resultat->currentData().toString());
-        if (formationChoisie->currentData().toInt() != tableInscriptions->item(ligne, 0)->text().toInt()
-            || agentChoisi->currentData().toInt() != tableInscriptions->item(ligne, 1)->text().toInt()) {
+        if (formationChoisie->currentData().toInt() != tableInscriptions->item(ligne, 0)->data(Qt::UserRole).toInt()
+            || agentChoisi->currentData().toInt() != tableInscriptions->item(ligne, 1)->data(Qt::UserRole).toInt()) {
             etat->setText("Pour inscrire un autre agent ou choisir une autre formation, utilisez Ajouter l'inscription.");
             return;
         }
@@ -1141,8 +1141,8 @@ void FormationsWindow::on_gestionInscriptions()
             return;
         }
         const int ligne = tableInscriptions->currentRow();
-        Inscription inscription(tableInscriptions->item(ligne, 0)->text().toInt(),
-                                tableInscriptions->item(ligne, 1)->text().toInt());
+        Inscription inscription(tableInscriptions->item(ligne, 0)->data(Qt::UserRole).toInt(),
+                                tableInscriptions->item(ligne, 1)->data(Qt::UserRole).toInt());
         const bool ok = inscription.supprimer();
         const QString erreur = Inscription::derniereErreur();
         rafraichirInscriptions();

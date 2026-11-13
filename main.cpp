@@ -79,9 +79,6 @@ static QPixmap loadLogo()
 
 static QString navigationText(const QString &icon, QString name)
 {
-    if (name == "Gestion des bâtiments à risque")
-        name = "Gestion des bâtiments\nà risque";
-
     if (name == "Gestion des formations")
         name = "Gestion des\nformations";
 
@@ -929,7 +926,6 @@ private:
 
         const QList<QPair<QString, QString>> entries = {
             {"⚠", "Incidents"},
-            {"▣", "Gestion des bâtiments à risque"},
             {"♟", "Personnel"},
             {"▰", "Véhicules"},
             {"⚙", "Équipements"},

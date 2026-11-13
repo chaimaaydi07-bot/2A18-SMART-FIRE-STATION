@@ -75,7 +75,7 @@ bool Inscription::modifier()
     query.bindValue(":agent", idAgent);
     if (!executerInscription(query)) return false;
     if (query.numRowsAffected() == 0) {
-        g_erreurInscription = "Aucune inscription ne correspond à ces identifiants.";
+        g_erreurInscription = "Cette inscription est introuvable.";
         return false;
     }
     return true;
@@ -89,7 +89,7 @@ bool Inscription::supprimer()
     query.bindValue(":agent", idAgent);
     if (!executerInscription(query)) return false;
     if (query.numRowsAffected() == 0) {
-        g_erreurInscription = "Aucune inscription ne correspond à ces identifiants.";
+        g_erreurInscription = "Cette inscription est introuvable.";
         return false;
     }
     return true;

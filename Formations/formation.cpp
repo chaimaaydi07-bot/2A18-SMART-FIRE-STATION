@@ -116,7 +116,7 @@ bool Formation::modifier()
     q.bindValue(":statut", statut);
     if (!executer(q)) return false;
     if (q.numRowsAffected() == 0) {
-        g_erreur = "Aucune formation ne correspond à cet identifiant.";
+        g_erreur = "Cette formation est introuvable.";
         return false;
     }
     return true;
@@ -129,7 +129,7 @@ bool Formation::supprimer(int idSup)
     q.bindValue(":id", idSup);
     if (!executer(q)) return false;
     if (q.numRowsAffected() == 0) {
-        g_erreur = "Aucune formation ne correspond à cet identifiant.";
+        g_erreur = "Cette formation est introuvable.";
         return false;
     }
     return true;
@@ -240,7 +240,7 @@ bool Formation::enregistrerPresence(int idFormation, int idAgent)
     q.bindValue(":a", idAgent);
     if (!executer(q)) return false;
     if (q.numRowsAffected() == 0) {
-        g_erreur = "Aucune inscription ne correspond à ces identifiants.";
+        g_erreur = "Cette inscription est introuvable.";
         return false;
     }
     return true;
