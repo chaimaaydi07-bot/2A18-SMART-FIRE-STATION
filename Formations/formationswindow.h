@@ -41,7 +41,6 @@ private slots:
 
 private:
     void construireUI();
-    QWidget* construireSidebar();
     QWidget* construireFormulaire();
     QWidget* construireListe();
     void rafraichir();

@@ -35,16 +35,6 @@ static const char *STYLE = R"(
 QMainWindow, #contenu { background:#f7f3f3; }
 QWidget { font-family:'Segoe UI','Calibri'; font-size:10pt; color:#2b2b2b; }
 
-/* ---- Barre laterale ---- */
-#sidebar { background:qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #3a0b14, stop:1 #c0222f); }
-#sidebar QLabel { color:white; background:transparent; }
-#nomApp { font-weight:bold; font-size:8pt; letter-spacing:1px; }
-#sidebar QPushButton { background:transparent; color:white; border:none; text-align:left;
-                       padding:9px 12px; border-radius:16px; font-size:9pt; }
-#sidebar QPushButton:hover { background:rgba(255,255,255,40); }
-#sidebar QPushButton[actif="true"] { background:white; color:#7a0f1c; font-weight:bold;
-                       border:2px solid #f3b6bd; }
-
 /* ---- Cartes ---- */
 #carte { background:white; border:1px solid #eadada; border-radius:14px; }
 #titre { color:#a3121f; font-size:17pt; font-weight:bold; background:transparent; }
@@ -183,69 +173,15 @@ QWidget* FormationsWindow::champ(const QString &label, QWidget *w)
 // ---------------------------------------------------------------- UI
 void FormationsWindow::construireUI()
 {
-    QWidget *racine = new QWidget;
-    setCentralWidget(racine);
-    QHBoxLayout *h = new QHBoxLayout(racine);
-    h->setContentsMargins(0, 0, 0, 0);
-    h->setSpacing(0);
-
-    h->addWidget(construireSidebar());
-
-    QWidget *contenu = new QWidget;
+    auto *contenu = new QWidget;
     contenu->setObjectName("contenu");
-    QHBoxLayout *hc = new QHBoxLayout(contenu);
-    hc->setContentsMargins(18, 18, 18, 18);
-    hc->setSpacing(18);
-    hc->addWidget(construireFormulaire(), 4);
-    hc->addWidget(construireListe(), 6);
-    h->addWidget(contenu, 1);
-}
+    setCentralWidget(contenu);
 
-QWidget* FormationsWindow::construireSidebar()
-{
-    QWidget *sb = new QWidget;
-    sb->setObjectName("sidebar");
-    sb->setFixedWidth(230);
-    QVBoxLayout *l = new QVBoxLayout(sb);
-    l->setContentsMargins(14, 22, 14, 14);
-    l->setSpacing(6);
-
-    // Logo du projet
-    QLabel *logo = new QLabel;
-    logo->setPixmap(QPixmap(":/formations/images/logo.png").scaled(120, 120, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    logo->setAlignment(Qt::AlignCenter);
-    l->addWidget(logo);
-
-    QLabel *nom = new QLabel("SMART FIRE STATION");
-    nom->setObjectName("nomApp");
-    nom->setAlignment(Qt::AlignCenter);
-    l->addWidget(nom);
-    l->addSpacing(14);
-
-    struct Item { const char *texte; bool actif; };
-    const Item items[] = {
-        {"⚠  Incidents", false},
-        {"👤  Personnel", false},
-        {"🚒  Véhicules", false},
-        {"🛠  Équipements", false},
-        {"📄  Rapports", false},
-        {"✦  Gestion des\n    formations", true},
-    };
-    for (const Item &it : items) {
-        QPushButton *b = new QPushButton(it.texte);
-        b->setProperty("actif", it.actif);
-        b->setCursor(Qt::PointingHandCursor);
-        if (!it.actif) {
-            connect(b, &QPushButton::clicked, this, [this]() {
-                QMessageBox::information(this, "Smart Fire Station",
-                    "Ce module est développé par un autre membre de l'équipe.");
-            });
-        }
-        l->addWidget(b);
-    }
-    l->addStretch();
-
-    return sb;
+    auto *layout = new QHBoxLayout(contenu);
+    layout->setContentsMargins(18, 18, 18, 18);
+    layout->setSpacing(18);
+    layout->addWidget(construireFormulaire(), 4);
+    layout->addWidget(construireListe(), 6);
 }
 
 QWidget* FormationsWindow::construireFormulaire()
