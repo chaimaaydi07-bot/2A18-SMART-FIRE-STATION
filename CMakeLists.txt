@@ -9,12 +9,17 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Sql Charts PrintSupport)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Sql Charts PrintSupport)
 
 set(PROJECT_SOURCES
     main.cpp
     images.qrc
+    Personnel/connection.cpp
+    Formations/formation.cpp
+    Formations/inscription.cpp
+    Formations/formationswindow.cpp
+    Formations/formations_resources.qrc
 )
 
 if(QT_VERSION_MAJOR EQUAL 6)
@@ -30,7 +35,8 @@ else()
 endif()
 
 target_link_libraries(smartfireincidents
-    PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
+    PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Sql
+            Qt${QT_VERSION_MAJOR}::Charts Qt${QT_VERSION_MAJOR}::PrintSupport
 )
 
 set_target_properties(smartfireincidents PROPERTIES

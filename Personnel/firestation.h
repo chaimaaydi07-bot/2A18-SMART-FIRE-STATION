@@ -23,6 +23,7 @@ class QFrame;
 class QDateEdit;
 class QWidget;
 class smart;
+class FormationsWindow;
 class vehicules;
 
 struct Certification {
@@ -180,6 +181,7 @@ private:
     QMap<QString, QPushButton *> m_boutonsModules;
     QWidget      *pageIncidents = nullptr;     // module Incidents
     vehicules    *pageVehicules = nullptr;     // module Vehicules (cree a la 1re ouverture)
+    FormationsWindow *pageFormations = nullptr;
     smart        *pageEquipements = nullptr;   // module Equipements (cree a la 1re ouverture)
     QString       m_nomConnecte;            // nom de l'agent connecte
     bool          m_lectureSeule = false;   // true = consultation uniquement

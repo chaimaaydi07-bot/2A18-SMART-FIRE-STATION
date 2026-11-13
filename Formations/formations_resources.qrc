@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/formations">
+        <file>images/logo.png</file>
+    </qresource>
+</RCC>
