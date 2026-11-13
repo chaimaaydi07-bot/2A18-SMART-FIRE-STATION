@@ -1,4 +1,5 @@
 #include "firestation.h"
+#include "formationswindow.h"
 #include "logoanime.h"
 #include "smart.h"
 #if __has_include("vehicules.h")   // module Véhicules présent dans cette branche ?
@@ -98,13 +99,13 @@ const QString C_GOC   = "Gestion opérationnelle et commandement (GOC)";
 //  Droits d'accès : modules autorisés pour chaque rôle (= poste)
 //  Pour ajouter un module validé plus tard, il suffit de l'ajouter ici.
 // ----------------------------------------------------------------------------
-const QStringList MODULES = {"Incidents", "Véhicules", "Équipements", "Personnel"};
+const QStringList MODULES = {"Incidents", "Véhicules", "Équipements", "Personnel", "Formations"};
 const QMap<QString, QStringList> ACCES = {
-    {"Chef de caserne",             {"Incidents", "Véhicules", "Équipements", "Personnel"}},
+    {"Chef de caserne",             {"Incidents", "Véhicules", "Équipements", "Personnel", "Formations"}},
     {"Dispatcher",                  {"Incidents"}},
     {"Mécanicien",                  {"Véhicules"}},
     {"Responsable des équipements", {"Équipements"}},
-    {"Responsable RH",              {"Personnel"}},
+    {"Responsable RH",              {"Personnel", "Formations"}},
     };
 
 bool estOperationnel(const QString &poste) { return POSTES_OPERATIONNELS.contains(poste); }
@@ -760,6 +761,15 @@ QWidget *FireStation::creerSidebar()
                 changerPageEnFondu(pages, [this] { pages->setCurrentWidget(pageVehicules); });
             });
 #endif
+        else if (t == "Formations")
+            connect(b, &QPushButton::clicked, this, [this] {
+                if (!pageFormations) {
+                    pageFormations = new FormationsWindow;
+                    pageFormations->setWindowFlags(Qt::Widget);
+                    pages->addWidget(pageFormations);
+                }
+                changerPageEnFondu(pages, [this] { pages->setCurrentWidget(pageFormations); });
+            });
         else if (t == "Équipements")
             connect(b, &QPushButton::clicked, this, [this] {
                 if (!pageEquipements) {                    // cree a la premiere ouverture

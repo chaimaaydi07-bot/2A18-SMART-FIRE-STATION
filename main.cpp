@@ -1,4 +1,6 @@
 #include <QtWidgets>
+#include "Formations/formationswindow.h"
+#include "Personnel/connection.h"
 #include <QPainterPath>
 #include <QPdfWriter>
 #include <QPageLayout>
@@ -967,6 +969,18 @@ private:
                         }
                         );
                 }
+            } else if (name == "Gestion des formations") {
+                connect(button, &QPushButton::clicked, owner, [owner] {
+                    if (!QSqlDatabase::database(QSqlDatabase::defaultConnection, false).isOpen()
+                        && !Connection::createInstance().createConnection()) {
+                        QMessageBox::warning(owner, "Formations", "Impossible de se connecter à Oracle.");
+                        return;
+                    }
+                    auto *window = new FormationsWindow(owner);
+                    window->setWindowFlags(Qt::Window);
+                    window->setAttribute(Qt::WA_DeleteOnClose);
+                    window->showMaximized();
+                });
             } else {
                 connect(
                     button,

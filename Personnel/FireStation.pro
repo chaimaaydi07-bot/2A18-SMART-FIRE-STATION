@@ -1,10 +1,10 @@
-QT += widgets printsupport network sql
+QT += widgets printsupport network sql charts
 
 CONFIG += c++17
 
 TARGET = FireStation
 
-INCLUDEPATH += ../Incidents ../Equipements ../Vehicules
+INCLUDEPATH += ../Incidents ../Equipements ../Vehicules ../Formations
 
 SOURCES += \
     ../Vehicules/vehicules_view.cpp \
@@ -39,3 +39,7 @@ SOURCES += ../Incidents/incident.cpp
 HEADERS += ../Incidents/incident.h
 SOURCES += ../Vehicules/vehiculerepository.cpp
 HEADERS += ../Vehicules/vehiculerepository.h
+
+SOURCES += ../Formations/formation.cpp ../Formations/inscription.cpp ../Formations/formationswindow.cpp
+HEADERS += ../Formations/formation.h ../Formations/inscription.h ../Formations/formationswindow.h
+RESOURCES += ../Formations/formations_resources.qrc

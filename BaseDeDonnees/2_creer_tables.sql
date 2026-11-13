@@ -183,7 +183,7 @@ CREATE TABLE INSCRIRE (
         CONSTRAINT fk_inscrire_formation REFERENCES FORMATION(id) ON DELETE CASCADE,
     date_inscription    DATE          DEFAULT SYSDATE NOT NULL,
     statut_inscription  VARCHAR2(20)  DEFAULT 'Inscrit' NOT NULL
-        CONSTRAINT ck_inscrire_statut CHECK (statut_inscription IN ('Inscrit', 'Confirmé', 'Annulé')),
+        CONSTRAINT ck_inscrire_statut CHECK (statut_inscription IN ('Inscrit', 'Confirmé', 'Annulé', 'En attente')),
     presence            VARCHAR2(10)
         CONSTRAINT ck_inscrire_presence CHECK (presence IN ('Présent', 'Absent')),
     resultat            VARCHAR2(20)
