@@ -2063,7 +2063,7 @@ void FireStation::afficherJournalSms()
     l->addWidget(bb);
     dlg.exec();
 }
-//fonction d'envoi SMS pour authentification
+//fonction d'envoi SMS pour authentifications
 // ============================================================================
 //  Innovation 2 : recommandation de certifications
 // ============================================================================

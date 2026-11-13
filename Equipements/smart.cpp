@@ -2198,6 +2198,7 @@ smart::smart(QWidget *parent)
     table->setColumnHidden(11, true);
     table->setColumnHidden(12, true);
     table->setColumnHidden(13, true);
+    table->setColumnHidden(0, true);
 
     table->setAlternatingRowColors(true);
     table->setShowGrid(true);
