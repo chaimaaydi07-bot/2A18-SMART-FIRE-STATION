@@ -26,8 +26,6 @@ public:
 
 private slots:
     void on_ajouter();
-    void on_modifier();
-    void on_supprimerForm();          // bouton « Supprimer » du formulaire
     void on_modifierLigne(int id);   // bouton « Modifier » de chaque ligne
     void on_supprimer(int id);
     void on_voir(int id);
@@ -47,6 +45,7 @@ private:
     void majAlerte();
     bool controleSaisie(QString &erreur);
     Formation lireFormulaire() const;
+    void chargerFormateurs();
     static QWidget* champ(const QString &label, QWidget *w);
 
     bool modeApercu = false;
@@ -60,8 +59,8 @@ private:
 
     // formulaire
     int formationSelectionnee = 0;
-    QLineEdit *leTitre, *leFormateur, *leLieu;
-    QComboBox *cbType, *cbNiveau, *cbStatut;
+    QLineEdit *leTitre, *leLieu;
+    QComboBox *cbType, *cbNiveau, *cbStatut, *cbFormateur;
     QDateEdit *deDebut, *deFin;
     QSpinBox *sbDuree, *sbPlaces;
 

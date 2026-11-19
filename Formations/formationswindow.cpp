@@ -202,9 +202,9 @@ QWidget* FormationsWindow::construireFormulaire()
 
     leTitre = new QLineEdit;
     leTitre->setPlaceholderText("Ex. Premiers secours PSC1");
-    leFormateur = new QLineEdit;
-    leFormateur->setPlaceholderText("Nom du formateur");
-    leFormateur->setValidator(new QRegularExpressionValidator(QRegularExpression("[A-Za-zÀ-ÿ \\-']{0,50}"), this));
+    cbFormateur = new QComboBox;
+    cbFormateur->setPlaceholderText("Sélectionner un formateur");
+    chargerFormateurs();
     leLieu = new QLineEdit;
     leLieu->setPlaceholderText("Ex. Tunis, Caserne centrale");
 
@@ -233,23 +233,14 @@ QWidget* FormationsWindow::construireFormulaire()
     g->addWidget(champ("Date de fin", deFin), 3, 1);
     g->addWidget(champ("Durée (heures)", sbDuree), 4, 0);
     g->addWidget(champ("Nombre de places", sbPlaces), 4, 1);
-    g->addWidget(champ("Formateur", leFormateur), 5, 0, 1, 2);
+    g->addWidget(champ("Formateur", cbFormateur), 5, 0, 1, 2);
     g->addWidget(champ("Lieu", leLieu), 6, 0, 1, 2);
     l->addLayout(g);
 
     QPushButton *bAj = new QPushButton("+  Ajouter");
     bAj->setObjectName("btnAjouter");
-    QPushButton *bMod = new QPushButton("✎  Modifier");
-    bMod->setObjectName("btnModifier");
-    QPushButton *bSupF = new QPushButton("🗑  Supprimer");
-    bSupF->setObjectName("btnSupprimerForm");
-    for (auto *b : {bAj, bMod, bSupF}) b->setCursor(Qt::PointingHandCursor);
-    QHBoxLayout *bl = new QHBoxLayout;
-    bl->setSpacing(14);
-    bl->addWidget(bAj);
-    bl->addWidget(bMod);
-    bl->addWidget(bSupF);
-    l->addLayout(bl);
+    bAj->setCursor(Qt::PointingHandCursor);
+    l->addWidget(bAj);
 
     QLabel *outilsTitre = new QLabel("Outils de gestion");
     outilsTitre->setObjectName("labelChamp");
@@ -273,12 +264,28 @@ QWidget* FormationsWindow::construireFormulaire()
     l->addWidget(bVider, 0, Qt::AlignCenter);
 
     connect(bAj, &QPushButton::clicked, this, &FormationsWindow::on_ajouter);
-    connect(bMod, &QPushButton::clicked, this, &FormationsWindow::on_modifier);
-    connect(bSupF, &QPushButton::clicked, this, &FormationsWindow::on_supprimerForm);
     connect(bStats, &QPushButton::clicked, this, &FormationsWindow::on_stats);
     connect(bCal, &QPushButton::clicked, this, &FormationsWindow::on_calendrier);
     connect(bVider, &QPushButton::clicked, this, &FormationsWindow::on_vider);
     return carte;
+}
+
+void FormationsWindow::chargerFormateurs()
+{
+    cbFormateur->clear();
+    QSqlQuery query;
+    if (query.exec("SELECT DISTINCT TRIM(NOM || ' ' || PRENOM) AS FORMATEUR "
+                   "FROM AGENT WHERE NOM IS NOT NULL AND PRENOM IS NOT NULL "
+                   "ORDER BY FORMATEUR")) {
+        while (query.next()) {
+            const QString nom = query.value(0).toString().trimmed();
+            if (!nom.isEmpty()) cbFormateur->addItem(nom);
+        }
+    }
+    // Le formulaire reste utilisable en mode aperçu / hors connexion.
+    if (cbFormateur->count() == 0)
+        cbFormateur->addItems({"Karim Ben Ali", "Sami Trabelsi", "Nour Haddad", "Leila Mansour"});
+    cbFormateur->setCurrentIndex(-1);
 }
 
 QWidget* FormationsWindow::construireListe()
@@ -489,7 +496,7 @@ bool FormationsWindow::controleSaisie(QString &erreur)
     if (leTitre->text().trimmed().size() < 3) { erreur = "Le titre doit contenir au moins 3 caractères."; return false; }
     if (deFin->date() < deDebut->date())      { erreur = "La date de fin doit être postérieure à la date de début."; return false; }
     if (sbDuree->value() <= 0)                { erreur = "La durée doit être supérieure à 0."; return false; }
-    if (leFormateur->text().trimmed().isEmpty()) { erreur = "Le formateur est obligatoire."; return false; }
+    if (cbFormateur->currentText().trimmed().isEmpty()) { erreur = "Le formateur est obligatoire."; return false; }
     if (leLieu->text().trimmed().isEmpty())   { erreur = "Le lieu est obligatoire."; return false; }
     if (sbPlaces->value() <= 0)               { erreur = "Le nombre de places doit être supérieur à 0."; return false; }
     return true;
@@ -499,7 +506,7 @@ Formation FormationsWindow::lireFormulaire() const
 {
     return Formation(formationSelectionnee, leTitre->text().trimmed(), cbType->currentText(),
                      deDebut->date(), deFin->date(), sbDuree->value(),
-                     leFormateur->text().trimmed(), leLieu->text().trimmed(),
+                     cbFormateur->currentText().trimmed(), leLieu->text().trimmed(),
                      sbPlaces->value(), cbNiveau->currentText(), cbStatut->currentText());
 }
 
@@ -539,42 +546,6 @@ void FormationsWindow::on_ajouter()
     }
 }
 
-void FormationsWindow::on_modifier()
-{
-    if (formationSelectionnee == 0) {
-        QMessageBox::warning(this, "Modification", "Sélectionnez une formation dans la liste avant de la modifier.");
-        return;
-    }
-    QString err;
-    if (!controleSaisie(err)) { QMessageBox::warning(this, "Saisie invalide", err); return; }
-    Formation f = lireFormulaire();
-    if (modeApercu) {
-        int i = demoIndex(f.getId());
-        if (i < 0) { QMessageBox::warning(this, "Introuvable", "Cette formation est introuvable.\nCliquez sur « Voir » dans la liste."); return; }
-        for (int j = 0; j < demo.size(); ++j) {
-            if (j != i && demo[j][1].trimmed().compare(f.getTitre().trimmed(), Qt::CaseInsensitive) == 0) {
-                QMessageBox::warning(this, "Titre déjà utilisé", "Une autre formation porte déjà ce titre.");
-                return;
-            }
-        }
-        demo[i] = ligneDemo(f);
-        rafraichir();
-        QMessageBox::information(this, "Succès", "Formation modifiée (mode aperçu).");
-        return;
-    }
-    if (!f.existe(f.getId())) {
-        QMessageBox::warning(this, "Introuvable", "Cette formation est introuvable.\nCliquez sur « Voir » dans la liste.");
-        return;
-    }
-    if (f.titreExiste(f.getTitre(), f.getId())) {
-        QMessageBox::warning(this, "Titre déjà utilisé", "Une autre formation porte déjà ce titre.");
-        return;
-    }
-    if (f.modifier()) { rafraichir(); QMessageBox::information(this, "Succès", "Formation modifiée."); }
-    else QMessageBox::critical(this, "Erreur Oracle", "Échec de la modification :\n" + Formation::derniereErreur());
-}
-
-
 // Bouton « Modifier » de la ligne : ouvre une fenetre pre-remplie, enregistre directement
 void FormationsWindow::on_modifierLigne(int id)
 {
@@ -605,7 +576,11 @@ void FormationsWindow::on_modifierLigne(int id)
     QDateEdit *eFin = new QDateEdit(QDate::fromString(v[3].toString(), "yyyy-MM-dd"));
     for (QDateEdit *d : {eDebut, eFin}) { d->setCalendarPopup(true); d->setDisplayFormat("dd/MM/yyyy"); }
     QSpinBox *eDuree = new QSpinBox; eDuree->setRange(0, 500); eDuree->setSuffix(" h"); eDuree->setValue(v[4].toInt());
-    QLineEdit *eFormateur = new QLineEdit(v[5].toString());
+    QComboBox *eFormateur = new QComboBox;
+    for (int i = 0; i < cbFormateur->count(); ++i) eFormateur->addItem(cbFormateur->itemText(i));
+    if (eFormateur->findText(v[5].toString(), Qt::MatchFixedString) < 0)
+        eFormateur->addItem(v[5].toString()); // conserve le nom des anciennes formations
+    eFormateur->setCurrentText(v[5].toString());
     QLineEdit *eLieu = new QLineEdit(v[6].toString());
     QSpinBox *ePlaces = new QSpinBox; ePlaces->setRange(0, 500); ePlaces->setValue(v[7].toInt());
     QComboBox *eNiveau = new QComboBox;
@@ -636,10 +611,10 @@ void FormationsWindow::on_modifierLigne(int id)
     if (eTitre->text().trimmed().size() < 3)   { QMessageBox::warning(this, "Saisie invalide", "Le titre doit contenir au moins 3 caractères."); return; }
     if (eFin->date() < eDebut->date())         { QMessageBox::warning(this, "Saisie invalide", "La date de fin doit être postérieure à la date de début."); return; }
     if (eDuree->value() <= 0 || ePlaces->value() <= 0) { QMessageBox::warning(this, "Saisie invalide", "Durée et nombre de places doivent être supérieurs à 0."); return; }
-    if (eFormateur->text().trimmed().isEmpty() || eLieu->text().trimmed().isEmpty()) { QMessageBox::warning(this, "Saisie invalide", "Formateur et lieu sont obligatoires."); return; }
+    if (eFormateur->currentText().trimmed().isEmpty() || eLieu->text().trimmed().isEmpty()) { QMessageBox::warning(this, "Saisie invalide", "Formateur et lieu sont obligatoires."); return; }
 
     Formation f(id, eTitre->text().trimmed(), eType->currentText(), eDebut->date(), eFin->date(), eDuree->value(),
-                eFormateur->text().trimmed(), eLieu->text().trimmed(), ePlaces->value(), eNiveau->currentText(), eStatut->currentText());
+                eFormateur->currentText().trimmed(), eLieu->text().trimmed(), ePlaces->value(), eNiveau->currentText(), eStatut->currentText());
     if (modeApercu) {
         int i = demoIndex(id);
         for (int j = 0; j < demo.size(); ++j) {
@@ -659,19 +634,6 @@ void FormationsWindow::on_modifierLigne(int id)
     }
     if (f.modifier()) { rafraichir(); QMessageBox::information(this, "Succès", "Formation modifiée."); }
     else QMessageBox::critical(this, "Erreur Oracle", "Échec de la modification :\n" + Formation::derniereErreur());
-}
-
-// Supprime la formation sélectionnée dans la liste.
-void FormationsWindow::on_supprimerForm()
-{
-    if (formationSelectionnee == 0) {
-        QMessageBox::warning(this, "Suppression", "Cliquez sur « Voir » dans la liste pour sélectionner une formation.");
-        return;
-    }
-    const int id = formationSelectionnee;
-    const bool existe = modeApercu ? demoIndex(id) >= 0 : Ftmp.existe(id);
-    if (!existe) { QMessageBox::warning(this, "Introuvable", "Cette formation est introuvable."); return; }
-    on_supprimer(id);
 }
 
 void FormationsWindow::on_supprimer(int id)
@@ -704,7 +666,9 @@ void FormationsWindow::on_voir(int id)
         const QStringList &r = demo[i];
         formationSelectionnee = id; leTitre->setText(r[1]); cbType->setCurrentText(r[2]);
         deDebut->setDate(QDate::fromString(r[3], "yyyy-MM-dd")); deFin->setDate(QDate::fromString(r[4], "yyyy-MM-dd"));
-        sbDuree->setValue(r[5].toInt()); leFormateur->setText(r[6]); leLieu->setText(r[7]);
+        sbDuree->setValue(r[5].toInt());
+        if (cbFormateur->findText(r[6], Qt::MatchFixedString) < 0 && !r[6].trimmed().isEmpty()) cbFormateur->addItem(r[6]);
+        cbFormateur->setCurrentText(r[6]); leLieu->setText(r[7]);
         sbPlaces->setValue(r[8].toInt()); cbNiveau->setCurrentText(r[9]); cbStatut->setCurrentText(r[10]);
         return;
     }
@@ -716,7 +680,9 @@ void FormationsWindow::on_voir(int id)
     deDebut->setDate(f.getDateDebut());
     deFin->setDate(f.getDateFin());
     sbDuree->setValue(f.getDuree());
-    leFormateur->setText(f.getFormateur());
+    if (cbFormateur->findText(f.getFormateur(), Qt::MatchFixedString) < 0 && !f.getFormateur().trimmed().isEmpty())
+        cbFormateur->addItem(f.getFormateur());
+    cbFormateur->setCurrentText(f.getFormateur());
     leLieu->setText(f.getLieu());
     sbPlaces->setValue(f.getNbPlaces());
     cbNiveau->setCurrentText(f.getNiveau());
@@ -727,7 +693,7 @@ void FormationsWindow::on_voir(int id)
 
 void FormationsWindow::on_vider()
 {
-    formationSelectionnee = 0; leTitre->clear(); leFormateur->clear(); leLieu->clear();
+    formationSelectionnee = 0; leTitre->clear(); cbFormateur->setCurrentIndex(-1); leLieu->clear();
     sbDuree->setValue(0); sbPlaces->setValue(0);
     deDebut->setDate(QDate::currentDate());
     deFin->setDate(QDate::currentDate().addDays(1));
