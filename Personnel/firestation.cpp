@@ -2477,12 +2477,13 @@ void FireStation::exporterPdf()
     deSemaine->setCalendarPopup(true);
     deSemaine->setDisplayFormat("dd/MM/yyyy");
     auto *sbNombre = new QSpinBox;
-    sbNombre->setRange(1, 8);
+    sbNombre->setRange(3, 8);   // minimum 3 : 1 chef + 1 chauffeur + 1 agent de terrain
     sbNombre->setValue(3);
     form->addRow("Semaine du :", deSemaine);
     form->addRow("Agents par garde :", sbNombre);
     auto *aide = new QLabel("Le planning commence le lundi de la semaine choisie.\n"
-                            "Chaque jour : garde de jour (08h-20h) et garde de nuit (20h-08h).");
+                            "Chaque jour : garde de jour (08h-20h) et garde de nuit (20h-08h).\n"
+                            "Chaque garde : 1 chef, 1 chauffeur et au moins 1 agent de terrain (minimum 3).");
     aide->setStyleSheet("color:#777;");
     form->addRow(aide);
     auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -2514,8 +2515,12 @@ bool FireStation::genererPlanningPdf(const QString &chemin, QDate debut, int age
         if (a.dispo == "En congé" || a.dispo == "En formation") exclus << &a;
         else equipe << &a;
     }
-    if (equipe.size() < 2) {
-        QMessageBox::warning(this, "Planning", "Il faut au moins 2 agents opérationnels disponibles.");
+    // Il faut deux équipes complètes de 3 qui se relaient (pas deux gardes de suite)
+    if (equipe.size() < 6) {
+        QMessageBox::warning(this, "Planning",
+                             QString("Il faut au moins 6 agents opérationnels disponibles "
+                                     "(deux équipes de 3 qui se relaient).\nDisponibles actuellement : %1.")
+                                 .arg(equipe.size()));
         return false;
     }
     // Rotation d'une semaine à l'autre : l'ordre de départ des agents est décalé selon
@@ -2530,7 +2535,7 @@ bool FireStation::genererPlanningPdf(const QString &chemin, QDate debut, int age
     const bool chauffeursDeNuit = semaine % 2 == 1;
 
     // Pour éviter deux gardes de suite, il faut au moins 2 équipes complètes
-    const int parGarde = std::max(1, std::min(agentsParGarde, int(equipe.size()) / 2));
+    const int parGarde = std::max(3, std::min(agentsParGarde, int(equipe.size()) / 2));
 
     // --- Construction des 14 gardes (7 jours x jour/nuit) par rotation
     const int sergent = int(GRADES.indexOf("Sergent"));
