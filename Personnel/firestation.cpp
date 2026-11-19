@@ -624,6 +624,9 @@ QToolButton#tableDelete:hover { background: #c1121f; }
     border-radius: 10px; padding: 8px 14px; font-weight: 700; }
 #alerteInfo QPushButton:hover { background: #e8f1fb; }
 #erreur { color: #b3211c; font-size: 12px; }
+QLabel#erreurChamp { color: #c62828; font-size: 11px; font-weight: 600; padding: 0 2px; }
+QLineEdit[invalide="true"], QComboBox[invalide="true"], QDateEdit[invalide="true"] {
+    border: 2px solid #c62828; background: #fff5f5; }
 #badgeUrgent { background: #fbe4e2; color: #b3211c; border-radius: 6px; padding: 2px 8px; font-weight: bold; }
 #badgeNormal { background: #fdebd0; color: #a86200; border-radius: 6px; padding: 2px 8px; font-weight: bold; }
 #badgeOk { background: #dff3e5; color: #1e7a3c; border-radius: 6px; padding: 2px 8px; font-weight: bold; }
@@ -681,7 +684,7 @@ FireStation::FireStation(QWidget *parent) : QMainWindow(parent)
 
     auto *corps = new QHBoxLayout;
     corps->setSpacing(16);
-    corps->addWidget(creerFormulaire(), 0, Qt::AlignTop);
+    corps->addWidget(creerFormulaire(), 0);   // le formulaire occupe toute la hauteur
     corps->addWidget(creerListe(), 1);
     content->addLayout(corps, 1);
     pages->addWidget(page0);
@@ -807,9 +810,34 @@ QWidget *FireStation::creerFormulaire()
     m_carteFormulaire = card;
     card->setObjectName("card");
     card->setFixedWidth(350);
-    auto *l = new QVBoxLayout(card);
+    auto *externe = new QVBoxLayout(card);
+    externe->setContentsMargins(0, 0, 0, 0);
+    externe->setSpacing(0);
+    // Le formulaire prend toute la hauteur de la page ; la barre de défilement
+    // n'apparaît que sur un très petit écran.
+    auto *defil = new QScrollArea;
+    defil->setWidgetResizable(true);
+    defil->setFrameShape(QFrame::NoFrame);
+    defil->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    defil->viewport()->setObjectName("vpForm");
+    auto *interieur = new QWidget;
+    interieur->setObjectName("formInterieur");
+    defil->viewport()->setStyleSheet("QWidget#vpForm, QWidget#formInterieur { background: transparent; }");
+    auto *l = new QVBoxLayout(interieur);
     l->setContentsMargins(16, 14, 16, 14);
     l->setSpacing(4);
+    defil->setWidget(interieur);
+    externe->addWidget(defil, 1);
+
+    // Message d'erreur sous un champ (caché tant qu'il n'y a pas d'erreur)
+    auto sousErreur = [this](QVBoxLayout *col, QWidget *champ) {
+        auto *e = new QLabel;
+        e->setObjectName("erreurChamp");
+        e->setWordWrap(true);
+        e->hide();
+        col->addWidget(e);
+        m_erreursChamps.insert(champ, e);
+    };
 
     lblFormTitle = new QLabel("＋ Nouvel agent");
     lblFormTitle->setObjectName("titreForm");
@@ -827,6 +855,7 @@ QWidget *FireStation::creerFormulaire()
     cbPoste = new QComboBox;
     cbPoste->addItems(POSTES);
     l->addWidget(cbPoste);
+    sousErreur(l, cbPoste);
 
     auto *rNom = new QHBoxLayout;
     auto *cNom = new QVBoxLayout, *cPre = new QVBoxLayout;
@@ -835,6 +864,9 @@ QWidget *FireStation::creerFormulaire()
     auto *lP = new QLabel("Prénom"); lP->setProperty("champ", "true");
     cNom->addWidget(lN); cNom->addWidget(edNom);
     cPre->addWidget(lP); cPre->addWidget(edPrenom);
+    sousErreur(cNom, edNom);
+    sousErreur(cPre, edPrenom);
+    cNom->addStretch(); cPre->addStretch();
     rNom->addLayout(cNom); rNom->addLayout(cPre);
     l->addLayout(rNom);
     // Contrôle de saisie : lettres seulement, 50 caractères au plus (VARCHAR2(50))
@@ -872,6 +904,9 @@ QWidget *FireStation::creerFormulaire()
     auto *lT = new QLabel("Téléphone (SMS)"); lT->setProperty("champ", "true");
     cCin->addWidget(lC); cCin->addWidget(edCin);
     cTel->addWidget(lT); cTel->addWidget(edTel);
+    sousErreur(cCin, edCin);
+    sousErreur(cTel, edTel);
+    cCin->addStretch(); cTel->addStretch();
     rCin->addLayout(cCin, 1); rCin->addLayout(cTel, 1);
     l->addLayout(rCin);
 
@@ -884,6 +919,7 @@ QWidget *FireStation::creerFormulaire()
     edMdp->setEchoMode(QLineEdit::Password);
     edMdp->setPlaceholderText("Laisser vide pour ne pas changer");
     l->addWidget(edMdp);
+    sousErreur(l, edMdp);
 
     champ("Disponibilité");
     cbDispo = new QComboBox;
@@ -906,7 +942,7 @@ QWidget *FireStation::creerFormulaire()
     scroll->setObjectName("zoneCerts");
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setFixedHeight(130);    // une seule certification par agent
+    scroll->setFixedHeight(150);    // une seule certification (+ son message d'erreur)
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     // Fond transparent pour la zone seulement (un style sans sélecteur s'appliquerait
     // aussi aux listes déroulantes des certifications, qui deviendraient noires)
@@ -921,10 +957,15 @@ QWidget *FireStation::creerFormulaire()
     scroll->setWidget(box);
     l->addWidget(scroll);
 
+    auto *bas = new QVBoxLayout;               // message général + boutons, sous les champs
+    bas->setContentsMargins(0, 6, 0, 0);
+    bas->setSpacing(6);
+    l->addLayout(bas);
+
     lblErreur = new QLabel;
     lblErreur->setObjectName("erreur");
     lblErreur->setWordWrap(true);
-    l->addWidget(lblErreur);
+    bas->addWidget(lblErreur);
 
     auto *rb = new QHBoxLayout;
     btnAjouter = new QPushButton("＋ Ajouter");
@@ -935,19 +976,23 @@ QWidget *FireStation::creerFormulaire()
     btnReset->setObjectName("reinit");
     for (QPushButton *b : {btnAjouter, btnModifier, btnReset}) b->setCursor(Qt::PointingHandCursor);
     rb->addWidget(btnAjouter); rb->addWidget(btnModifier); rb->addWidget(btnReset);
-    l->addLayout(rb);
+    bas->addLayout(rb);
+    l->addStretch();                           // l'espace libre reste sous les boutons
 
     connect(cbPoste, &QComboBox::currentTextChanged, this, [this] { onPosteChanged(); });
 
     // Contrôle de saisie : message quand le validateur refuse un caractère
     auto signaler = [this](QLineEdit *ed, const QString &message) {
-        connect(ed, &QLineEdit::inputRejected, this, [this, message] { lblErreur->setText(message); });
-        connect(ed, &QLineEdit::textEdited, this, [this] { lblErreur->clear(); });
+        // le message s'affiche sous le champ et disparaît dès qu'on corrige
+        connect(ed, &QLineEdit::inputRejected, this, [this, ed, message] { erreurChamp(ed, message); });
+        connect(ed, &QLineEdit::textEdited, this, [this, ed] { effacerErreurChamp(ed); });
     };
     signaler(edNom,    "Le nom ne doit contenir que des lettres (50 caractères au plus).");
     signaler(edPrenom, "Le prénom ne doit contenir que des lettres (50 caractères au plus).");
     signaler(edCin,    "Le CIN ne contient que des chiffres (8 au plus).");
     signaler(edTel,    "Le téléphone ne contient que des chiffres, « + » et des espaces.");
+    connect(edMdp, &QLineEdit::textEdited, this, [this] { effacerErreurChamp(edMdp); });
+    connect(cbPoste, &QComboBox::currentTextChanged, this, [this] { effacerErreurChamp(cbPoste); });
     connect(bAddC, &QPushButton::clicked, this, [this] { ajouterCertLigne(); });
     connect(btnAjouter,  &QPushButton::clicked, this, &FireStation::ajouter);
     connect(btnModifier, &QPushButton::clicked, this, &FireStation::modifier);
@@ -1381,19 +1426,69 @@ void FireStation::ajouterCertLigne(const Certification &c)
     g->setColumnStretch(0, 1);
     g->setColumnStretch(1, 1);
 
+    auto *err = new QLabel;                    // message d'erreur des dates
+    err->setObjectName("erreurChamp");
+    err->setWordWrap(true);
+    err->hide();
+    g->addWidget(err, 3, 0, 1, 3);
+    m_erreursChamps.insert(ech, err);
+
     connect(del, &QToolButton::clicked, this, [this, frame] { retirerCert(frame); });
 
     certsLayout->insertWidget(certsLayout->count() - 1, frame);
     fondu(frame, 300);
     CertRow r;
-    r.frame = frame; r.nom = nom->lineEdit(); r.obt = obt; r.ech = ech;
+    r.frame = frame; r.nom = nom->lineEdit(); r.obt = obt; r.ech = ech; r.err = err;
     m_certRows.append(r);
+    // Contrôle immédiat : l'échéance doit être après la date d'obtention
+    connect(obt, &QDateEdit::dateChanged, this, [this, r] { verifierDatesCert(r); });
+    connect(ech, &QDateEdit::dateChanged, this, [this, r] { verifierDatesCert(r); });
+}
+
+void FireStation::verifierDatesCert(const CertRow &r)
+{
+    if (r.ech->date() <= r.obt->date())
+        erreurChamp(r.ech, "L'échéance doit être après la date d'obtention.");
+    else
+        effacerErreurChamp(r.ech);
+}
+
+void FireStation::erreurChamp(QWidget *champ, const QString &message)
+{
+    QLabel *e = m_erreursChamps.value(champ);
+    if (e) { e->setText(message); e->show(); }
+    champ->setProperty("invalide", true);      // bordure rouge (voir le style)
+    champ->style()->unpolish(champ);
+    champ->style()->polish(champ);
+}
+
+void FireStation::effacerErreurChamp(QWidget *champ)
+{
+    if (QLabel *e = m_erreursChamps.value(champ)) { e->clear(); e->hide(); }
+    champ->setProperty("invalide", false);
+    champ->style()->unpolish(champ);
+    champ->style()->polish(champ);
+    // plus aucun champ en erreur : le message général disparaît aussi
+    bool reste = false;
+    for (QLabel *e : std::as_const(m_erreursChamps)) if (!e->isHidden()) { reste = true; break; }
+    if (!reste && lblErreur) lblErreur->clear();
+}
+
+void FireStation::effacerErreursChamps()
+{
+    const QList<QWidget *> champs = m_erreursChamps.keys();
+    for (QWidget *c : champs) effacerErreurChamp(c);
+    if (lblErreur) lblErreur->clear();
 }
 
 void FireStation::retirerCert(QFrame *frame)
 {
     for (int i = 0; i < m_certRows.size(); ++i) {
-        if (m_certRows[i].frame == frame) { m_certRows.removeAt(i); break; }
+        if (m_certRows[i].frame == frame) {
+            m_erreursChamps.remove(m_certRows[i].ech);
+            m_certRows.removeAt(i);
+            break;
+        }
     }
     certsLayout->removeWidget(frame);
     frame->hide();
@@ -1404,6 +1499,7 @@ void FireStation::retirerCert(QFrame *frame)
 void FireStation::viderCerts()
 {
     for (const CertRow &r : m_certRows) {
+        m_erreursChamps.remove(r.ech);        // la ligne va être détruite
         certsLayout->removeWidget(r.frame);
         r.frame->hide();
         r.frame->deleteLater();
@@ -1413,6 +1509,16 @@ void FireStation::viderCerts()
 
 bool FireStation::lireFormulaire(FicheAgent &a, QString &erreur)
 {
+    effacerErreursChamps();
+    bool ok = true;
+    // Chaque erreur s'affiche sous son champ ; on vérifie tous les champs
+    // pour que l'utilisateur voie toutes les corrections à faire d'un coup.
+    auto faute = [&](QWidget *champ, const QString &message) {
+        erreurChamp(champ, message);
+        if (ok) champ->setFocus();                // curseur sur la première erreur
+        ok = false;
+    };
+
     a.nom    = edNom->text().trimmed();
     a.prenom = edPrenom->text().trimmed();
     a.poste  = cbPoste->currentText();
@@ -1422,14 +1528,15 @@ bool FireStation::lireFormulaire(FicheAgent &a, QString &erreur)
     a.cin        = edCin->text().trimmed();
     a.dispo      = cbDispo->currentText();
 
-    if (a.nom.isEmpty() || a.prenom.isEmpty()) { erreur = "Nom et prénom obligatoires."; return false; }
+    if (a.nom.isEmpty())    faute(edNom, "Le nom est obligatoire.");
+    if (a.prenom.isEmpty()) faute(edPrenom, "Le prénom est obligatoire.");
+
     // Contrôle de saisie : CIN de 8 chiffres, unique
-    if (!QRegularExpression("^[0-9]{8}$").match(a.cin).hasMatch()) {
-        erreur = "Le CIN doit contenir exactement 8 chiffres."; return false;
-    }
-    if (m_agentTmp.cinExiste(a.cin, m_editingId)) {            // contrôle dans la classe Agent
-        erreur = "Ce CIN appartient déjà à un autre agent."; return false;
-    }
+    if (!QRegularExpression("^[0-9]{8}$").match(a.cin).hasMatch())
+        faute(edCin, "Le CIN doit avoir 8 chiffres.");
+    else if (m_agentTmp.cinExiste(a.cin, m_editingId))           // contrôle dans la classe Agent
+        faute(edCin, "CIN déjà utilisé.");
+
     // Contrôle de saisie : numéro tunisien, 8 chiffres, avec ou sans +216.
     // Il est toujours enregistré au même format : +216 XX XXX XXX
     QString chiffres = a.tel;
@@ -1437,43 +1544,43 @@ bool FireStation::lireFormulaire(FicheAgent &a, QString &erreur)
     if (chiffres.startsWith("+216")) chiffres = chiffres.mid(4);
     else if (chiffres.startsWith("00216")) chiffres = chiffres.mid(5);
     if (!QRegularExpression("^[0-9]{8}$").match(chiffres).hasMatch()) {
-        erreur = "Numéro de téléphone invalide : 8 chiffres (ex. 20 123 456 ou +216 20 123 456)."; return false;
+        faute(edTel, "8 chiffres (ex. 20 123 456).");
+    } else {
+        a.tel = QString("+216 %1 %2 %3").arg(chiffres.left(2), chiffres.mid(2, 3), chiffres.mid(5, 3));
+        if (m_agentTmp.telephoneExiste(a.tel, m_editingId))     // contrôle dans la classe Agent
+            faute(edTel, "Numéro déjà utilisé.");
     }
-    a.tel = QString("+216 %1 %2 %3").arg(chiffres.left(2), chiffres.mid(2, 3), chiffres.mid(5, 3));
-    if (m_agentTmp.telephoneExiste(a.tel, m_editingId)) {      // contrôle dans la classe Agent
-        erreur = "Ce numéro de téléphone est déjà utilisé par un autre agent."; return false;
-    }
+
     // Contrôle de cohérence : une caserne n'a qu'un seul chef
-    if (a.poste == "Chef de caserne" && m_agentTmp.posteExiste(a.poste, m_editingId)) {
-        erreur = "Il y a déjà un chef de caserne : une caserne n'a qu'un seul chef."; return false;
-    }
+    if (a.poste == "Chef de caserne" && m_agentTmp.posteExiste(a.poste, m_editingId))
+        faute(cbPoste, "Il y a déjà un chef de caserne : une caserne n'a qu'un seul chef.");
+
     const QString mdp = edMdp->text();
     if (ACCES.contains(a.poste) && mdp.isEmpty()) {
         const int i = indexParId(m_editingId);
-        if (i < 0 || m_agents[i].mdpHash.isEmpty()) {
-            erreur = "Ce poste a accès à l'application : saisissez un mot de passe (6 caractères minimum).";
-            return false;
-        }
+        if (i < 0 || m_agents[i].mdpHash.isEmpty())
+            faute(edMdp, "Ce poste a accès à l'application : mot de passe obligatoire (6 caractères minimum).");
     }
-    if (!mdp.isEmpty() && mdp.size() < 6) {
-        erreur = "Le mot de passe doit contenir au moins 6 caractères."; return false;
-    }
+    if (!mdp.isEmpty() && mdp.size() < 6)
+        faute(edMdp, "Le mot de passe doit contenir au moins 6 caractères.");
     a.mdpHash = mdp.isEmpty() ? QString() : PageConnexion::hacher(mdp);   // jamais stocké en clair
 
     a.certs.clear();
     for (const CertRow &r : m_certRows) {
         Certification c;
         c.nom = r.nom->text().trimmed();
-        if (c.nom.isEmpty()) continue;          // ligne vide = pas de certification
         c.obtention = r.obt->date();
         c.echeance  = r.ech->date();
         if (c.echeance <= c.obtention) {
-            erreur = QString("« %1 » : l'échéance doit être postérieure à l'obtention.").arg(c.nom);
-            return false;
+            faute(r.ech, "L'échéance doit être après la date d'obtention.");
+            continue;
         }
+        if (c.nom.isEmpty()) continue;          // ligne vide = pas de certification
         a.certs.append(c);
     }
-    return true;
+
+    if (!ok) erreur = "Corrigez les champs signalés en rouge.";
+    return ok;
 }
 
 void FireStation::ajouter()
@@ -1520,7 +1627,7 @@ void FireStation::reinitialiser()
     cbDispo->setCurrentIndex(0);
     viderCerts();
     ajouterCertLigne();          // une ligne de saisie toujours visible
-    lblErreur->clear();
+    effacerErreursChamps();
     onPosteChanged();
     btnAjouter->setEnabled(true);
     btnModifier->setEnabled(false);
@@ -1542,7 +1649,7 @@ void FireStation::chargerDansFormulaire(const QString &id)
     viderCerts();
     for (const Certification &c : a.certs) ajouterCertLigne(c);
     if (a.certs.isEmpty()) ajouterCertLigne();
-    lblErreur->clear();
+    effacerErreursChamps();
     btnAjouter->setEnabled(false);
     btnModifier->setEnabled(true);
 }
