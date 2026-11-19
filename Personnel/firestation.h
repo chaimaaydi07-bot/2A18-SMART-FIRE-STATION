@@ -70,6 +70,7 @@ struct CertRow {
     QLineEdit *nom   = nullptr;
     QDateEdit *obt   = nullptr;
     QDateEdit *ech   = nullptr;
+    QLabel    *err   = nullptr;   // message d'erreur sous les dates
 };
 
 class FireStation : public QMainWindow
@@ -115,6 +116,11 @@ private:
     Agent versAgent(const FicheAgent &f) const; // fiche de l'interface → objet Agent
     void chargerSessions();
     bool lireFormulaire(FicheAgent &a, QString &erreur);
+    // Contrôle de saisie : message d'erreur affiché sous le champ concerné
+    void erreurChamp(QWidget *champ, const QString &message);
+    void effacerErreurChamp(QWidget *champ);
+    void effacerErreursChamps();
+    void verifierDatesCert(const CertRow &r);
     int indexParId(const QString &id) const;
 
     void consulter(const QString &id);
@@ -167,6 +173,7 @@ private:
     QVBoxLayout  *certsLayout = nullptr;
     QList<CertRow> m_certRows;
     QLabel       *lblErreur = nullptr;
+    QMap<QWidget *, QLabel *> m_erreursChamps;   // champ -> son message d'erreur
     QPushButton  *btnAjouter = nullptr, *btnModifier = nullptr;
 
     // liste
