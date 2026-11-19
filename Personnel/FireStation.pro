@@ -7,6 +7,7 @@ TARGET = FireStation
 INCLUDEPATH += ../Incidents ../Equipements ../Vehicules ../Formations
 
 SOURCES += \
+    ../Equipements/equipement_extra.cpp \
     ../Vehicules/vehicules_view.cpp \
     connection.cpp \
     main.cpp \
@@ -20,6 +21,7 @@ SOURCES += \
     ../Equipements/equipement.cpp
 
 HEADERS += \
+    ../Equipements/equipement_extra.h \
     ../Vehicules/vehicules_utils.h \
     agent.h \
     connection.h \

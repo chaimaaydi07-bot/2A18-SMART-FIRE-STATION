@@ -11,6 +11,8 @@ class QComboBox;
 class QSpinBox;
 class QDateEdit;
 class QTableWidget;
+class QObject;
+class QEvent;
 
 class smart : public QMainWindow
 {
@@ -19,6 +21,10 @@ class smart : public QMainWindow
 public:
     smart(QWidget *parent = nullptr);
     void setUtilisateur(const QString &nomUtilisateur, const QString &role);
+
+protected:
+    // Clic sur le champ Localisation -> ouvre le plan des emplacements
+    bool eventFilter(QObject *obj, QEvent *ev) override;
 
 private slots:
     void ajouter();
@@ -44,6 +50,9 @@ private:
     void envoyerAlerteEmail(const QString &sujet, const QString &corps, const QString &ref, bool manuel = false);
     void afficherParametresEmail();
     void appliquerTheme(bool sombre);
+
+    // Plan des emplacements (vert = libre, rouge = occupe, bleu = actuel)
+    QString choisirEmplacement();
 
     // formulaire
     QLineEdit *nom;
