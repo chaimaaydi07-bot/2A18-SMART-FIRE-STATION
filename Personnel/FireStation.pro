@@ -45,3 +45,7 @@ HEADERS += ../Vehicules/vehiculerepository.h
 SOURCES += ../Formations/formation.cpp ../Formations/inscription.cpp ../Formations/formationswindow.cpp
 HEADERS += ../Formations/formation.h ../Formations/inscription.h ../Formations/formationswindow.h
 RESOURCES += ../Formations/formations_resources.qrc
+
+QT += serialport
+SOURCES += ../Incidents/arduino.cpp
+HEADERS += ../Incidents/arduino.h

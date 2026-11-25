@@ -5,6 +5,7 @@
 #include <QPageSize>
 #include <QTextDocument>
 #include <QUuid>
+#include "arduino.h"
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 
@@ -683,6 +684,10 @@ private:
     QLabel *codeError = nullptr;
     QTextEdit *descriptionInput = nullptr;
     QComboBox *statusInput = nullptr;
+    QLabel *arduinoTestStatus = nullptr;
+    enum class SourceAlerte { Aucune, Simulation, Arduino };
+    SourceAlerte sourceAlerte = SourceAlerte::Aucune;
+    Arduino arduino;
 
     QLineEdit *searchInput = nullptr;
     QComboBox *gravityFilter = nullptr;
@@ -1035,6 +1040,34 @@ private:
         formButtons->addWidget(deleteButton, 1, 1);
 
         form->addLayout(formButtons);
+
+        auto *serialButton = createButton("Connecter Arduino");
+        auto *simulateArduinoButton = createButton("Simuler une alerte Arduino");
+        arduinoTestStatus = new QLabel("Arduino : non connecté", formCard);
+        arduinoTestStatus->setWordWrap(true);
+        form->addWidget(serialButton);
+        form->addWidget(simulateArduinoButton);
+        form->addWidget(arduinoTestStatus);
+        connect(serialButton, &QPushButton::clicked, this, [this, serialButton] {
+            if (arduino.getserial()->isOpen())
+                fermerPortArduino(serialButton);
+            else
+                connecterArduino(serialButton);
+        });
+        connect(simulateArduinoButton, &QPushButton::clicked, this, [this] {
+            recevoirAlerteArduino(SourceAlerte::Simulation);
+        });
+        connect(arduino.getserial(), &QSerialPort::readyRead, this, [this] {
+            lireArduino();
+        });
+        connect(arduino.getserial(), &QSerialPort::errorOccurred, this,
+                [this, serialButton](QSerialPort::SerialPortError erreur) {
+            if (erreur != QSerialPort::ResourceError || !arduino.getserial()->isOpen())
+                return;
+            const QString detail = arduino.getserial()->errorString();
+            fermerPortArduino(serialButton);
+            arduinoTestStatus->setText("Arduino : liaison interrompue. " + detail);
+        });
 
         auto *listCard = createCard();
         columns->addWidget(listCard, 57);
@@ -1480,6 +1513,68 @@ private:
         incident.setStatus(statusInput->currentText());
     }
 
+    void recevoirAlerteArduino(SourceAlerte source)
+    {
+        if (sourceAlerte != SourceAlerte::Aucune)
+            return;
+
+        sourceAlerte = source;
+        statusInput->setCurrentText("Signalé");
+        arduinoTestStatus->setText(
+            (source == SourceAlerte::Arduino
+                ? QStringLiteral("Alerte Arduino reçue")
+                : QStringLiteral("ALERTE_INCIDENT simulée"))
+            + " : complétez l’adresse et le code, puis cliquez sur Ajouter.");
+        addressInput->setFocus();
+    }
+
+    void connecterArduino(QPushButton *bouton)
+    {
+        const QStringList ports = Arduino::ports_disponibles();
+
+        if (ports.isEmpty()) {
+            arduinoTestStatus->setText("Aucun port série détecté. Branchez la carte en USB.");
+            return;
+        }
+
+        bool ok = false;
+        const QString nom = QInputDialog::getItem(
+            this, "Connexion Arduino", "Port de la carte Arduino :", ports, 0, false, &ok);
+        if (!ok)
+            return;
+
+        if (!arduino.connect_arduino(nom)) {
+            arduinoTestStatus->setText("Connexion impossible : " + arduino.getserial()->errorString());
+            return;
+        }
+
+        bouton->setText("Déconnecter Arduino");
+        arduinoTestStatus->setText("Arduino connecté sur " + nom + " (9600 bauds).");
+    }
+
+    void fermerPortArduino(QPushButton *bouton)
+    {
+        arduino.close_arduino();
+        if (sourceAlerte == SourceAlerte::Arduino)
+            sourceAlerte = SourceAlerte::Aucune;
+        bouton->setText("Connecter Arduino");
+        arduinoTestStatus->setText("Arduino : non connecté.");
+    }
+
+    void lireArduino()
+    {
+        for (const QByteArray &message : arduino.read_from_arduino()) {
+            if (message != "ALERTE_INCIDENT")
+                continue;
+            if (sourceAlerte == SourceAlerte::Arduino) {
+                arduinoTestStatus->setText("Alerte Arduino en attente. Complétez le formulaire.");
+            } else {
+                sourceAlerte = SourceAlerte::Aucune;
+                recevoirAlerteArduino(SourceAlerte::Arduino);
+            }
+        }
+    }
+
     void addIncident()
     {
         if (!validateForm())
@@ -1500,10 +1595,27 @@ private:
         QString erreur;
 
         if (!incident.ajouter(erreur)) {
+            if (sourceAlerte == SourceAlerte::Arduino) {
+                arduino.write_to_arduino("INCIDENT_ERREUR");
+                sourceAlerte = SourceAlerte::Aucune;
+                arduinoTestStatus->setText("Échec de l’ajout. Corrigez puis relancez l’alerte.");
+            } else if (sourceAlerte == SourceAlerte::Simulation) {
+                arduinoTestStatus->setText("Test Arduino : échec de l’ajout. Corrigez puis réessayez.");
+            }
             showDatabaseError("Ajout impossible", erreur);
             return;
         }
 
+        const SourceAlerte source = sourceAlerte;
+        sourceAlerte = SourceAlerte::Aucune;
+        if (source == SourceAlerte::Arduino) {
+            const bool envoiEnFile = arduino.write_to_arduino("INCIDENT_OK");
+            arduinoTestStatus->setText(envoiEnFile
+                ? "Oracle : incident enregistré. Confirmation mise en file d’envoi série."
+                : "Oracle : incident enregistré, mais confirmation Arduino indisponible.");
+        } else if (source == SourceAlerte::Simulation) {
+            arduinoTestStatus->setText("Oracle : incident enregistré. Réponse simulée : INCIDENT_OK.");
+        }
         reloadAfterWrite("L'ajout");
     }
 
