@@ -330,145 +330,6 @@ private:
     std::function<bool(QObject *, QEvent *)> fn;
 };
 
-// couleurs d'un type d'equipement (pastille + apercu du formulaire)
-inline void couleursType(const QString &t, QColor &fond, QColor &texte)
-{
-    if (t == "Protection")         { fond = QColor("#ffe3e5"); texte = QColor("#c62828"); }
-    else if (t == "Secours")       { fond = QColor("#fdebd0"); texte = QColor("#b45f06"); }
-    else if (t == "Communication") { fond = QColor("#e3eefa"); texte = QColor("#1565c0"); }
-    else if (t == "Médical")       { fond = QColor("#d7f4df"); texte = QColor("#1e7a3c"); }
-    else if (t == "Outillage")     { fond = QColor("#ece3f5"); texte = QColor("#6a1b9a"); }
-    else                           { fond = QColor("#eceff1"); texte = QColor("#455a64"); }
-}
-
-// colonne "Type" : pastille coloree
-class TypeChipDelegate : public QStyledItemDelegate {
-public:
-    using QStyledItemDelegate::QStyledItemDelegate;
-    void paint(QPainter *p, const QStyleOptionViewItem &opt, const QModelIndex &idx) const override {
-        QStyleOptionViewItem o(opt);
-        initStyleOption(&o, idx);
-        const QString txt = o.text;
-        o.text.clear();
-        QStyle *st = o.widget ? o.widget->style() : QApplication::style();
-        st->drawControl(QStyle::CE_ItemViewItem, &o, p, o.widget);
-        surlignerHover(p, opt.rect, idx.row());
-        if (txt.isEmpty()) return;
-
-        QColor fond, texte;
-        couleursType(txt, fond, texte);
-        QFont f = o.font;
-        f.setPixelSize(11);
-        f.setBold(true);
-        const QFontMetrics fm(f);
-        const double w = qMin<double>(fm.horizontalAdvance(txt) + 28, opt.rect.width() - 14);
-        const QRectF pill(opt.rect.left() + 8, opt.rect.center().y() - 12, w, 24);
-        p->save();
-        p->setRenderHint(QPainter::Antialiasing);
-        p->setPen(Qt::NoPen);
-        p->setBrush(fond);
-        p->drawRoundedRect(pill, 12, 12);
-        p->setBrush(texte);
-        p->drawEllipse(QPointF(pill.left() + 11, pill.center().y()), 3.4, 3.4);
-        p->setFont(f);
-        p->setPen(texte);
-        p->drawText(pill.adjusted(20, 0, -6, 0), Qt::AlignVCenter | Qt::AlignLeft,
-                    fm.elidedText(txt, Qt::ElideRight, int(w - 26)));
-        p->restore();
-    }
-};
-
-// colonne "Stock" : quantite + jauge par rapport au seuil minimum
-class StockCelluleDelegate : public QStyledItemDelegate {
-public:
-    using QStyledItemDelegate::QStyledItemDelegate;
-    void paint(QPainter *p, const QStyleOptionViewItem &opt, const QModelIndex &idx) const override {
-        QStyleOptionViewItem o(opt);
-        initStyleOption(&o, idx);
-        const int q = o.text.toInt();
-        o.text.clear();
-        QStyle *st = o.widget ? o.widget->style() : QApplication::style();
-        st->drawControl(QStyle::CE_ItemViewItem, &o, p, o.widget);
-        surlignerHover(p, opt.rect, idx.row());
-
-        const int s = idx.sibling(idx.row(), 4).data(Qt::DisplayRole).toString().toInt();
-        const bool bas = q < s;
-        const double cy = opt.rect.center().y();
-
-        p->save();
-        p->setRenderHint(QPainter::Antialiasing);
-        QFont f = o.font;
-        f.setBold(true);
-        f.setPixelSize(14);
-        p->setFont(f);
-        p->setPen(bas ? QColor("#c26a00") : cTexteFort());
-        p->drawText(QRectF(opt.rect.left() + 10, opt.rect.top(), 40, opt.rect.height()),
-                    Qt::AlignVCenter | Qt::AlignLeft, QString::number(q));
-
-        const double bx = opt.rect.left() + 52;
-        const double bw = qMax(20, opt.rect.width() - 66);
-        p->setPen(Qt::NoPen);
-        p->setBrush(cPiste());
-        p->drawRoundedRect(QRectF(bx, cy - 4, bw, 8), 4, 4);
-
-        const double maxv = qMax(2.0 * s, double(qMax(q, 1)));
-        const double ratio = qBound(0.0, q / maxv, 1.0);
-        const QColor c = bas ? QColor("#ef6c00") : QColor("#2e9e5a");
-        QLinearGradient g(bx, 0, bx + bw, 0);
-        g.setColorAt(0, c.lighter(135));
-        g.setColorAt(1, c);
-        p->setBrush(g);
-        if (ratio > 0.0)
-            p->drawRoundedRect(QRectF(bx, cy - 4, qMax(8.0, bw * ratio), 8), 4, 4);
-
-        if (s > 0) {                                  // repere du seuil minimum
-            const double sx = bx + bw * qBound(0.0, s / maxv, 1.0);
-            p->setPen(QPen(cTexteFort(), 1.6));
-            p->drawLine(QPointF(sx, cy - 8), QPointF(sx, cy + 8));
-        }
-        p->restore();
-    }
-};
-
-// colonne "Localisation" : pastille avec epingle
-class LocPillDelegate : public QStyledItemDelegate {
-public:
-    using QStyledItemDelegate::QStyledItemDelegate;
-    void paint(QPainter *p, const QStyleOptionViewItem &opt, const QModelIndex &idx) const override {
-        QStyleOptionViewItem o(opt);
-        initStyleOption(&o, idx);
-        const QString txt = o.text;
-        o.text.clear();
-        QStyle *st = o.widget ? o.widget->style() : QApplication::style();
-        st->drawControl(QStyle::CE_ItemViewItem, &o, p, o.widget);
-        surlignerHover(p, opt.rect, idx.row());
-
-        QFont f = o.font;
-        f.setPixelSize(12);
-        f.setBold(!txt.isEmpty());
-        p->save();
-        p->setRenderHint(QPainter::Antialiasing);
-        p->setFont(f);
-        if (txt.isEmpty()) {
-            p->setPen(QColor("#b9b9c4"));
-            p->drawText(opt.rect.adjusted(12, 0, 0, 0), Qt::AlignVCenter | Qt::AlignLeft, "—");
-        } else {
-            const QFontMetrics fm(f);
-            const QString el = fm.elidedText(txt, Qt::ElideRight, opt.rect.width() - 60);
-            const double w = fm.horizontalAdvance(el) + 34;
-            const QRectF pill(opt.rect.left() + 8, opt.rect.center().y() - 12, w, 24);
-            p->setPen(Qt::NoPen);
-            p->setBrush(QColor("#eef1f6"));
-            p->drawRoundedRect(pill, 12, 12);
-            p->setBrush(QColor("#c40000"));
-            p->drawEllipse(QPointF(pill.left() + 13, pill.center().y()), 3.6, 3.6);
-            p->setPen(QColor("#3b4a63"));
-            p->drawText(pill.adjusted(24, 0, -8, 0), Qt::AlignVCenter | Qt::AlignLeft, el);
-        }
-        p->restore();
-    }
-};
-
 // délégué par défaut du tableau : dessine normalement puis surligne la ligne survolée
 class HoverDelegate : public QStyledItemDelegate {
 public:
@@ -1161,11 +1022,11 @@ static QString htmlEmailAlerte(const QStringList &lignes)
 
         cartes += "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:10px 0;background:" + fond
                   + ";border-left:5px solid " + coul + ";border-radius:8px;\"><tr><td style=\"padding:14px 18px;\">"
-                                                       "<span style=\"background:" + coul + ";color:#ffffff;font-size:10px;font-weight:bold;letter-spacing:1px;"
-                           "padding:3px 10px;border-radius:10px;\">" + genre.toHtmlEscaped() + "</span>"
-                                            "<div style=\"font-size:16px;font-weight:bold;color:#302934;margin-top:9px;\">" + titre.toHtmlEscaped() + "</div>"
-                                            "<div style=\"font-size:13px;color:#666666;margin-top:4px;\">" + detail.toHtmlEscaped() + "</div>"
-                                             "</td></tr></table>";
+                  "<span style=\"background:" + coul + ";color:#ffffff;font-size:10px;font-weight:bold;letter-spacing:1px;"
+                  "padding:3px 10px;border-radius:10px;\">" + genre.toHtmlEscaped() + "</span>"
+                  "<div style=\"font-size:16px;font-weight:bold;color:#302934;margin-top:9px;\">" + titre.toHtmlEscaped() + "</div>"
+                  "<div style=\"font-size:13px;color:#666666;margin-top:4px;\">" + detail.toHtmlEscaped() + "</div>"
+                  "</td></tr></table>";
     }
     return "<html><body style=\"margin:0;padding:0;background:#f4f4f6;font-family:'Segoe UI',Arial,sans-serif;\">"
            "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f6;padding:28px 0;\"><tr><td align=\"center\">"
@@ -1175,12 +1036,12 @@ static QString htmlEmailAlerte(const QStringList &lignes)
            "<div style=\"color:#ffffff;font-size:26px;font-weight:bold;margin-top:8px;\">Alerte équipements</div>"
            "<div style=\"color:#ffd6d6;font-size:14px;margin-top:6px;\">" + QString::number(lignes.size())
            + " équipement(s) nécessitent votre attention</div></td></tr>"
-             "<tr><td style=\"padding:26px 32px 8px 32px;color:#302934;font-size:14px;line-height:1.5;\">Bonjour,<br><br>"
-             "Smart Fire Station a détecté une alerte automatique sur les équipements de la caserne :</td></tr>"
-             "<tr><td style=\"padding:6px 32px;\">" + cartes + "</td></tr>"
-                      "<tr><td style=\"padding:12px 32px 28px 32px;color:#555555;font-size:14px;\">Merci de prendre les mesures nécessaires.</td></tr>"
-                      "<tr><td style=\"background:#faf5f5;padding:18px 32px;color:#999999;font-size:11px;border-top:1px solid #efe4e4;"
-                      "border-radius:0 0 14px 14px;\">Message automatique &bull; " + QDateTime::currentDateTime().toString("dd/MM/yyyy HH:mm")
+           "<tr><td style=\"padding:26px 32px 8px 32px;color:#302934;font-size:14px;line-height:1.5;\">Bonjour,<br><br>"
+           "Smart Fire Station a détecté une alerte automatique sur les équipements de la caserne :</td></tr>"
+           "<tr><td style=\"padding:6px 32px;\">" + cartes + "</td></tr>"
+           "<tr><td style=\"padding:12px 32px 28px 32px;color:#555555;font-size:14px;\">Merci de prendre les mesures nécessaires.</td></tr>"
+           "<tr><td style=\"background:#faf5f5;padding:18px 32px;color:#999999;font-size:11px;border-top:1px solid #efe4e4;"
+           "border-radius:0 0 14px 14px;\">Message automatique &bull; " + QDateTime::currentDateTime().toString("dd/MM/yyyy HH:mm")
            + " &bull; Smart Fire Station</td></tr></table></td></tr></table></body></html>";
 }
 
@@ -2154,7 +2015,6 @@ smart::smart(QWidget *parent)
         "Inventaire du matériel de la caserne : état, stock et maintenance");
     description->setStyleSheet("color:#777;");
     blocTitre->addWidget(description);
-
     enteteHaut->addLayout(blocTitre, 1);
     contentLayout->addLayout(enteteHaut);
 
@@ -2497,7 +2357,7 @@ smart::smart(QWidget *parent)
 
     table = new QTableWidget(0, 15);
     table->setHorizontalHeaderLabels({
-        "ID", "Nom", "Type", "Stock", "Seuil", "État", "Localisation",
+        "ID", "Nom", "Type", "Qté", "Seuil", "État", "Localisation",
         "Date achat", "Dern. maint.", "Proch. maint.", "Actions",
         "Marque", "Modèle", "Remarques", "Santé"
     });
@@ -2506,11 +2366,7 @@ smart::smart(QWidget *parent)
         table->horizontalHeader()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
     table->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Stretch);
     table->horizontalHeader()->setSectionResizeMode(10, QHeaderView::Fixed);
-    table->setColumnWidth(10, 96);
-    table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
-    table->setColumnWidth(2, 150);
-    table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed);
-    table->setColumnWidth(3, 170);
+    table->setColumnWidth(10, 160);
     table->horizontalHeader()->setMinimumSectionSize(40);
     table->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
@@ -2519,7 +2375,6 @@ smart::smart(QWidget *parent)
     table->setColumnHidden(12, true);
     table->setColumnHidden(13, true);
     table->setColumnHidden(0, true);
-    table->setColumnHidden(4, true);    // le seuil est visible dans la jauge de la colonne "Stock"
 
     table->setAlternatingRowColors(true);
     table->setShowGrid(true);
@@ -2548,11 +2403,8 @@ smart::smart(QWidget *parent)
         menuCols.exec(table->horizontalHeader()->mapToGlobal(pos));
     });
     table->setMouseTracking(true);
-    table->verticalHeader()->setDefaultSectionSize(52);
-    table->setItemDelegateForColumn(2, new TypeChipDelegate(table));
-    table->setItemDelegateForColumn(3, new StockCelluleDelegate(table));
+    table->verticalHeader()->setDefaultSectionSize(44);
     table->setItemDelegateForColumn(5, new EtatDelegate(table));
-    table->setItemDelegateForColumn(6, new LocPillDelegate(table));
     table->setItemDelegateForColumn(14, new SanteDelegate(table));
     table->setItemDelegate(new HoverDelegate(table));       // colonnes "normales" : survol de la ligne
     table->viewport()->installEventFilter(new EvtFilter(table, [this](QObject *, QEvent *e) {
@@ -2984,7 +2836,7 @@ void smart::chargerDepuisBase()
         QMessageBox::warning(this, "Base de données",
                              "Les colonnes SEUIL, DATE_PROCHAINE, REMARQUES et LOCALISATION sont absentes "
                              "de la table EQUIPEMENT.\n\nExécutez le script SQL (ALTER TABLE) dans Oracle SQL Developer.\n\n"
-                                 + erreurExtra);
+                             + erreurExtra);
     }
 
     for (int r = 0; r < m->rowCount(); r++) {    // 3. une ligne par enregistrement
@@ -3047,18 +2899,14 @@ void smart::ajouterLigne(const QString &id, const QString &n, const QString &t, 
     actLayout->setContentsMargins(2, 2, 2, 2);
     actLayout->setSpacing(4);
 
-    QPushButton *btnEdit = new QPushButton("✎");
-    QPushButton *btnDel  = new QPushButton("🗑");
-    btnEdit->setToolTip("Modifier");
-    btnDel->setToolTip("Supprimer");
-    btnEdit->setCursor(Qt::PointingHandCursor);
-    btnDel->setCursor(Qt::PointingHandCursor);
-    btnEdit->setStyleSheet("QPushButton{background:#fff4f5;color:#9e1724;border:1px solid #efc9cd;border-radius:9px;padding:0px;font-size:15px;}"
+    QPushButton *btnEdit = new QPushButton("Modifier");
+    QPushButton *btnDel  = new QPushButton("Supprimer");
+    btnEdit->setStyleSheet("QPushButton{background:#fff4f5;color:#9e1724;border:1px solid #efc9cd;border-radius:7px;padding:3px 6px;font-size:11px;}"
                            "QPushButton:hover{background:#f6d6da;}");
-    btnDel->setStyleSheet("QPushButton{background:#8f1420;color:white;border:1px solid #74101a;border-radius:9px;padding:0px;font-size:15px;}"
+    btnDel->setStyleSheet("QPushButton{background:#8f1420;color:white;border:1px solid #74101a;border-radius:7px;padding:3px 6px;font-size:11px;}"
                           "QPushButton:hover{background:#c1121f;}");
-    btnEdit->setFixedSize(36, 32);
-    btnDel->setFixedSize(36, 32);
+    btnEdit->setMinimumWidth(48);
+    btnDel->setMinimumWidth(48);
     actLayout->addWidget(btnEdit);
     actLayout->addWidget(btnDel);
 
@@ -3401,7 +3249,8 @@ void smart::colorierLignes()
             QFont f = it->font();
             f.setBold(q < s);
             it->setFont(f);
-            it->setBackground(QBrush(Qt::NoBrush));      // la jauge du delegue indique deja le stock bas
+            it->setBackground(q < s ? QBrush(QColor("#fdebd0")) : QBrush(Qt::NoBrush));
+            it->setForeground(q < s ? QBrush(QColor("#9d5500")) : QBrush());
             it->setToolTip(q < s ? QString("Stock insuffisant : %1 / seuil %2").arg(q).arg(s) : QString());
         }
 
@@ -3672,7 +3521,6 @@ void smart::majCartes()
 
     if (QPushButton *b = findChild<QPushButton *>("btnCloche"))
         b->setText(QString("🔔  %1").arg(alertes));
-
 
     // carte d'alerte stock / état sous le tableau
     if (QLabel *l = findChild<QLabel *>("alerteResume")) {
@@ -4692,8 +4540,8 @@ void smart::afficherMaintenancePredictive()
     QHBoxLayout *fl = new QHBoxLayout(foot);
     fl->setContentsMargins(24, 12, 24, 12);
     QLabel *aide = new QLabel(nbPlanifiables > 0
-                                  ? QString("%1 équipement(s) peuvent être replanifiés : score < 70 % avec une maintenance en retard ou trop lointaine.").arg(nbPlanifiables)
-                                  : QString("Aucune replanification nécessaire pour le moment."));
+        ? QString("%1 équipement(s) peuvent être replanifiés : score < 70 % avec une maintenance en retard ou trop lointaine.").arg(nbPlanifiables)
+        : QString("Aucune replanification nécessaire pour le moment."));
     aide->setStyleSheet("color:#888;font-size:11px;");
     fl->addWidget(aide);
     fl->addStretch();
@@ -4724,12 +4572,12 @@ void smart::afficherMaintenancePredictive()
         QString html = "<h2 style='color:#c40000;margin-bottom:2px'>Rapport de maintenance prédictive</h2>"
                        "<p style='color:#777'>Situation au " + today.toString(FMT) + " &bull; " + QString::number(total)
                        + " équipement(s) &bull; santé moyenne du parc : <b>" + QString::number(moyenne) + " %</b></p>"
-                                                                                                          "<table width='100%' cellspacing='8' cellpadding='8'><tr>"
-                                                                                                          "<td bgcolor='#ffd8dc' align='center'><b style='font-size:20px;color:#9d1020'>" + QString::number(nbCrit) + "</b><br>Critiques</td>"
-                                                   "<td bgcolor='#fdebd0' align='center'><b style='font-size:20px;color:#9d5500'>" + QString::number(nbSurv) + "</b><br>À surveiller</td>"
-                                                   "<td bgcolor='#d7f4df' align='center'><b style='font-size:20px;color:#176d37'>" + QString::number(nbBon) + "</b><br>En bon état</td>"
-                                                  "</tr></table><br>"
-                                                  "<table width='100%' cellspacing='0' cellpadding='6' border='1' style='border-color:#e0d4d4'><tr bgcolor='#5b1722'>";
+                       "<table width='100%' cellspacing='8' cellpadding='8'><tr>"
+                       "<td bgcolor='#ffd8dc' align='center'><b style='font-size:20px;color:#9d1020'>" + QString::number(nbCrit) + "</b><br>Critiques</td>"
+                       "<td bgcolor='#fdebd0' align='center'><b style='font-size:20px;color:#9d5500'>" + QString::number(nbSurv) + "</b><br>À surveiller</td>"
+                       "<td bgcolor='#d7f4df' align='center'><b style='font-size:20px;color:#176d37'>" + QString::number(nbBon) + "</b><br>En bon état</td>"
+                       "</tr></table><br>"
+                       "<table width='100%' cellspacing='0' cellpadding='6' border='1' style='border-color:#e0d4d4'><tr bgcolor='#5b1722'>";
         const QStringList entetes = {"Équipement", "Santé", "Niveau", "Facteurs de risque",
                                      "Prochaine maintenance", "Recommandation", "Date suggérée"};
         for (const QString &h : entetes)
@@ -4743,12 +4591,12 @@ void smart::afficherMaintenancePredictive()
             QStringList facteurs;
             for (const QString &f : l.facteurs) facteurs << f.toHtmlEscaped();
             html += "<tr><td><b>" + l.nom.toHtmlEscaped() + "</b><br><small>" + l.id.toHtmlEscaped() + "</small></td>"
-                                                                                                       "<td align='center'><b>" + QString::number(l.score) + " %</b></td>"
-                                                 "<td align='center' bgcolor='" + fond + "'><b>" + niveau + "</b></td>"
-                                                "<td>" + facteurs.join(" &bull; ") + "</td>"
-                                                  "<td>" + (l.prochaine.isValid() ? l.prochaine.toString(FMT) : QString("—")) + "</td>"
-                                                                                           "<td>" + l.reco.toHtmlEscaped() + "</td>"
-                                               "<td>" + (l.suggeree.isValid() ? l.suggeree.toString(FMT) : QString("—")) + "</td></tr>";
+                    "<td align='center'><b>" + QString::number(l.score) + " %</b></td>"
+                    "<td align='center' bgcolor='" + fond + "'><b>" + niveau + "</b></td>"
+                    "<td>" + facteurs.join(" &bull; ") + "</td>"
+                    "<td>" + (l.prochaine.isValid() ? l.prochaine.toString(FMT) : QString("—")) + "</td>"
+                    "<td>" + l.reco.toHtmlEscaped() + "</td>"
+                    "<td>" + (l.suggeree.isValid() ? l.suggeree.toString(FMT) : QString("—")) + "</td></tr>";
         }
         html += "</table>";
 
@@ -5297,8 +5145,8 @@ void smart::afficherParametresEmail()
                          btnTest->setEnabled(true);
                          if (ok)
                              afficherStatut(1, "✓  Email accepté par le serveur pour " + x.destinataire + ".\n"
-                                                                                                          "Réponse du serveur : " + err + "\n"
-                                                           "Vérifiez la boîte de réception, les Spams et les onglets Promotions / Notifications.");
+                                               "Réponse du serveur : " + err + "\n"
+                                               "Vérifiez la boîte de réception, les Spams et les onglets Promotions / Notifications.");
                          else
                              afficherStatut(2, "⚠  Échec : " + err);
                      });
