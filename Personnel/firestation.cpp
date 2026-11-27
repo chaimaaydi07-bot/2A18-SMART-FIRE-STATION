@@ -893,7 +893,7 @@ QWidget *FireStation::creerFormulaire()
     auto *rCin = new QHBoxLayout;
     auto *cCin = new QVBoxLayout, *cTel = new QVBoxLayout;
     edCin = new QLineEdit;
-    edCin->setPlaceholderText("8 chiffres");
+    edCin->setPlaceholderText("8 chiffres (ex. 12345678)");
     // Contrôle de saisie : uniquement des chiffres, 8 au plus
     edCin->setValidator(new QRegularExpressionValidator(QRegularExpression("[0-9]{0,8}"), edCin));
     edTel = new QLineEdit;
